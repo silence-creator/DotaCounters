@@ -20,6 +20,3 @@ dota_config.json
 *.swp
 Thumbs.db
 desktop.ini
-
-# ── Локальный бэкап старой версии ─────────────────────────────────────────────
-main_copy.py
