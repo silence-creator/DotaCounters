@@ -71,6 +71,40 @@ python main.py
 `tkinter` входит в стандартную поставку Python для Windows. В Linux его
 обычно нужно доставить отдельно (`sudo apt install python3-tk`).
 
+### Тесты
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+Разбор страницы Dotabuff проверяется на сохранённой копии реальной страницы
+(`tests/fixtures/`), поэтому тесты не ходят в сеть.
+
+---
+
+## Структура
+
+```
+main.py                 запуск окна и больше ничего
+dotacounters/
+    version.py          единственное место с номером версии
+    config.py           тема и язык между запусками
+    themes.py           цветовые схемы
+    i18n.py             строки интерфейса, ru/en
+    heroes.py           список героев
+    net.py              общий HTTP-клиент (cloudscraper)
+    dotabuff.py         разбор таблиц контрпиков
+    patches.py          патч и патчноуты из datafeed Valve
+    ui/
+        app.py          главное окно
+        hero_browser.py список героев
+        patch_notes.py  заметки к патчу
+        winapi.py       тёмный заголовок окна в Windows
+```
+
+Версия указана один раз, в `dotacounters/version.py`. Оттуда её берут все
+надписи в интерфейсе и имя собираемого `.exe` — править больше нигде не нужно.
+
 ---
 
 ## Сборка .exe
