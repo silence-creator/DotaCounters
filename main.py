@@ -103,7 +103,7 @@ THEMES = {
 
 I18N = {
     "en": {
-        "app_subtitle":      "C O U N T E R  I N T E L L I G E N C E  S Y S T E M  v 2 . 1 . 5",
+        "app_subtitle":      "C O U N T E R  I N T E L L I G E N C E  S Y S T E M  v 1 . 0",
         "tab_search":        "SEARCH",
         "tab_settings":      "SETTINGS",
         "tab_updates":       "UPDATES",
@@ -118,7 +118,7 @@ I18N = {
         "output_header":     "  ANALYSIS OUTPUT",
         "output_source":     "DOTABUFF.COM  ",
         "footer_hint":       "[ ENTER ] search  ·  [ ⊞ HEROES ] browse all heroes  ·  images enabled",
-        "welcome_title":     "COUNTER INTELLIGENCE v2.1.5",
+        "welcome_title":     "COUNTER INTELLIGENCE v1.0",
         "welcome_enter":     "  Enter a hero name above to begin analysis.\n",
         "welcome_browse":    "  Or click ⊞ HEROES to browse all heroes.\n\n",
         "welcome_examples":  "  Examples:\n",
@@ -145,7 +145,7 @@ I18N = {
         "set_lang_ru":       "Русский",
         "set_about_head":    "ABOUT",
         "set_ver":           "Version",
-        "set_ver_val":       "2.1.5",
+        "set_ver_val":       "1.0",
         "set_author":        "Author",
         "set_author_val":    "KIRILL ZALESKIY",
         "set_data":          "Data source",
@@ -158,10 +158,10 @@ I18N = {
         # Updates
         "upd_title":         "UPDATES",
         "upd_subtitle":      "Program update history",
-        "upd_text":          "v2.1.5 Added settings, added the ability to change the theme, change the language, program information, fixed a bug when parsing the dota2/patches page when the result was an empty page, resulting in a hard fallback 7.40c",
+        "upd_text":          "v1.0\nFirst public release. Counter-pick search via Dotabuff with hero icons and win rates, a built-in hero browser with live search, an in-app reader for the current Dota 2 patch notes, five colour themes and an English/Russian interface. Settings persist between sessions.",
     },
     "ru": {
-        "app_subtitle":      "С И С Т Е М А  А Н А Л И З А  К О Н Т Е Р П И К О В  v 2 . 1 . 5",
+        "app_subtitle":      "С И С Т Е М А  А Н А Л И З А  К О Н Т Е Р П И К О В  v 1 . 0",
         "tab_search":        "ПОИСК",
         "tab_settings":      "НАСТРОЙКИ",
         "tab_updates":       "ОБНОВЛЕНИЯ",
@@ -176,7 +176,7 @@ I18N = {
         "output_header":     "  ВЫВОД АНАЛИЗА",
         "output_source":     "DOTABUFF.COM  ",
         "footer_hint":       "[ ENTER ] поиск  ·  [ ⊞ ГЕРОИ ] все герои  ·  изображения включены",
-        "welcome_title":     "АНАЛИЗ КОНТРПИКОВ v2.1.5",
+        "welcome_title":     "АНАЛИЗ КОНТРПИКОВ v1.0",
         "welcome_enter":     "  Введите имя героя для начала анализа.\n",
         "welcome_browse":    "  Или нажмите ⊞ ГЕРОИ для просмотра списка.\n\n",
         "welcome_examples":  "  Примеры:\n",
@@ -203,7 +203,7 @@ I18N = {
         "set_lang_ru":       "Русский",
         "set_about_head":    "О ПРОГРАММЕ",
         "set_ver":           "Версия",
-        "set_ver_val":       "2.1.5",
+        "set_ver_val":       "1.0",
         "set_author":        "Автор",
         "set_author_val":    "КИРИЛЛ ЗАЛЕСКИЙ",
         "set_data":          "Источник данных",
@@ -216,7 +216,7 @@ I18N = {
         # Updates
         "upd_title":         "ОБНОВЛЕНИЯ",
         "upd_subtitle":      "История обновлений программы",
-        "upd_text":          "v2.1.5 Added settings, added the ability to change the theme, change the language, program information, fixed a bug when parsing the dota2/patches page when the result was an empty page, resulting in a hard fallback 7.40c",
+        "upd_text":          "v1.0\nПервый публичный релиз. Поиск контрпиков через Dotabuff с иконками героев и винрейтами, встроенный список героев с живым поиском, просмотр патчноутов текущего патча Dota 2 прямо в программе, пять цветовых тем и интерфейс на русском и английском. Настройки сохраняются между запусками.",
     },
 }
 
@@ -334,7 +334,7 @@ def fetch_current_patch():
                 return m.group(0)
     except Exception:
         pass
-    return "7.41"
+    return "7.41b"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -535,6 +535,387 @@ class HeroBrowserModal(tk.Toplevel):
         else:
             self._canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# PATCH NOTES MODAL
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def fetch_patch_notes(patch_version: str) -> list[dict]:
+    """
+    Загружает список изменений патча через Valve JSON API.
+    Возвращает формат для вашего GUI: [{"title": str, "notes": [str, ...]}, ...]
+    """
+    scraper = cloudscraper.create_scraper(
+        browser={"browser": "chrome", "platform": "windows", "mobile": False}
+    )
+
+    try:
+        # Убираем лишние точки, если пользователь ввел "7.35."
+        patch_version = patch_version.strip().strip('.')
+
+        # Step 1: Resolve the exact internal version key from the patch list.
+        # Valve's patchnotes API uses a specific key (e.g. "7.41b" or "7.41_2")
+        # that may differ from the display name. We look it up first.
+        resolved_version = patch_version
+        try:
+            list_url = "https://www.dota2.com/datafeed/patchnoteslist?language=english"
+            list_resp = scraper.get(list_url, timeout=10)
+            if list_resp.status_code == 200:
+                list_data = list_resp.json()
+                patches = list_data.get("patches") or list_data.get("patch_notes") or []
+                # Build a map of display-name → internal key
+                # Each patch entry typically has "patch_number" and optionally a
+                # separate "patch_name" or "version" field used as the API key.
+                for p in reversed(patches):  # newest first
+                    # The internal key used by the /patchnotes endpoint
+                    internal_key = (
+                        p.get("patch_name")
+                        or p.get("version")
+                        or p.get("patch_number")
+                        or ""
+                    )
+                    display_name = (
+                        p.get("patch_number")
+                        or p.get("patch_name")
+                        or p.get("version")
+                        or ""
+                    )
+                    # Match either by display name or by internal key
+                    m_internal = re.search(r'7\.\d+[a-z]?', str(internal_key))
+                    m_display  = re.search(r'7\.\d+[a-z]?', str(display_name))
+                    matched_display  = m_display.group(0)  if m_display  else ""
+                    matched_internal = m_internal.group(0) if m_internal else ""
+                    if matched_display == patch_version or matched_internal == patch_version:
+                        resolved_version = str(internal_key).strip()
+                        break
+                else:
+                    # Fallback: try the last patch in the list
+                    if patches:
+                        last = patches[-1]
+                        resolved_version = str(
+                            last.get("patch_name")
+                            or last.get("version")
+                            or last.get("patch_number")
+                            or patch_version
+                        ).strip()
+        except Exception:
+            pass  # Keep resolved_version = patch_version if lookup fails
+
+        url = f"https://www.dota2.com/datafeed/patchnotes?version={resolved_version}&language=english"
+
+        resp = scraper.get(url, timeout=12)
+        if resp.status_code != 200:
+            return []
+
+        data = resp.json()
+
+        # Valve sometimes wraps everything under a "result" or "patch" key
+        if not any(k in data for k in ("generic_notes", "items", "heroes")):
+            for wrapper_key in ("result", "patch", "data", "notes"):
+                if isinstance(data.get(wrapper_key), dict):
+                    data = data[wrapper_key]
+                    break
+
+        sections = []
+
+        # 1. GENERAL (Это СПИСОК в JSON Valve)
+        generic = data.get("generic_notes")
+        if isinstance(generic, list) and generic:
+            notes = []
+            for entry in generic:
+                note = entry.get("note") or entry.get("text")
+                if note: notes.append(note.strip())
+            if notes:
+                sections.append({"title": "GENERAL", "notes": notes})
+
+        # 2. ITEMS (Это СЛОВАРЬ в JSON Valve)
+        items_data = data.get("items")
+        if isinstance(items_data, dict):
+            item_notes = []
+            for item_key, item_info in items_data.items():
+                # Проверяем, что item_info - это словарь, а не список
+                if isinstance(item_info, dict):
+                    changes = item_info.get("ability_notes") or item_info.get("notes") or []
+                    for ch in changes:
+                        note = ch.get("note") or ch.get("text")
+                        if note:
+                            name = item_key.replace('item_', '').replace('_', ' ').upper()
+                            item_notes.append(f"{name}: {note.strip()}")
+            if item_notes:
+                sections.append({"title": "ITEMS", "notes": item_notes})
+
+        # 3. HEROES (Это СЛОВАРЬ в JSON Valve)
+        heroes_data = data.get("heroes")
+        if isinstance(heroes_data, dict):
+            for hero_key, hero_info in heroes_data.items():
+                if not isinstance(hero_info, dict): continue
+                
+                hero_display = hero_key.replace("npc_dota_hero_", "").replace("_", " ").upper()
+                current_hero_notes = []
+
+                # Заметки героя
+                h_notes = hero_info.get("hero_notes") or []
+                for entry in h_notes:
+                    note = entry.get("note") or entry.get("text")
+                    if note: current_hero_notes.append(note.strip())
+
+                # Способности героя
+                abilities = hero_info.get("abilities") or {}
+                if isinstance(abilities, dict):
+                    for ab_key, ab_info in abilities.items():
+                        if not isinstance(ab_info, dict): continue
+                        ab_notes = ab_info.get("ability_notes") or []
+                        ab_name = ab_key.replace("_", " ").title()
+                        for entry in ab_notes:
+                            note = entry.get("note") or entry.get("text")
+                            if note: current_hero_notes.append(f"[{ab_name}] {note.strip()}")
+
+                if current_hero_notes:
+                    sections.append({"title": hero_display, "notes": current_hero_notes})
+
+        return sections
+
+    except Exception as e:
+        print(f"Критическая ошибка парсинга: {e}")
+        return []
+
+
+class PatchNotesModal(tk.Toplevel):
+    def __init__(self, parent, theme: dict, tr: dict, patch_version: str):
+        super().__init__(parent)
+        self.T = theme
+        self.tr = tr
+        self.patch_version = patch_version
+
+        self.title(f"Patch {patch_version} Notes")
+        self.configure(bg=theme["BG_DARK"])
+        self.resizable(True, True)
+        self.minsize(560, 500)
+        self.geometry("720x760")
+        self.transient(parent)
+        self.grab_set()
+        self._center(parent)
+        set_title_bar_color(self)
+        self._build()
+        self.focus_set()
+
+        # Запускаем загрузку в фоне
+        threading.Thread(target=self._load_notes, daemon=True).start()
+
+    def _center(self, parent):
+        parent.update_idletasks()
+        px = parent.winfo_x() + parent.winfo_width() // 2
+        py = parent.winfo_y() + parent.winfo_height() // 2
+        self.update_idletasks()
+        w, h = self.winfo_width(), self.winfo_height()
+        self.geometry(f"+{px - w // 2}+{py - h // 2}")
+
+    def _build(self):
+        T = self.T
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(3, weight=1)
+
+        # ── Заголовок ─────────────────────────────────────────────────────────
+        hdr = tk.Frame(self, bg=T["BG_DARK"])
+        hdr.grid(row=0, column=0, sticky="ew", padx=16, pady=(14, 0))
+        tk.Frame(hdr, bg=T["ACCENT"], width=4).pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+        left = tk.Frame(hdr, bg=T["BG_DARK"])
+        left.pack(side=tk.LEFT)
+        tk.Label(left, text=f"PATCH  {self.patch_version}",
+                 font=("Courier New", 18, "bold"),
+                 fg=T["ACCENT"], bg=T["BG_DARK"]).pack(anchor="w")
+        tk.Label(left, text="  dota2.com  ·  patch notes",
+                 font=("Courier New", 9), fg=T["TEXT_DIM"], bg=T["BG_DARK"]).pack(anchor="w")
+
+        close_btn = tk.Button(hdr, text="✕", font=("Courier New", 12, "bold"),
+                              bg=T["BG_DARK"], fg=T["TEXT_DIM"],
+                              activebackground=T["BG_DARK"], activeforeground=T["ACCENT2"],
+                              relief="flat", bd=0, cursor="hand2", command=self.destroy)
+        close_btn.pack(side=tk.RIGHT, padx=(0, 4))
+        close_btn.bind("<Enter>", lambda e: close_btn.config(fg=T["ACCENT2"]))
+        close_btn.bind("<Leave>", lambda e: close_btn.config(fg=T["TEXT_DIM"]))
+
+        tk.Frame(self, bg=T["BORDER"], height=1).grid(
+            row=1, column=0, sticky="ew", padx=16, pady=(10, 0))
+
+        # ── Поиск по заметкам ─────────────────────────────────────────────────
+        sf = tk.Frame(self, bg=T["BG_DARK"])
+        sf.grid(row=2, column=0, sticky="ew", padx=16, pady=(10, 6))
+        sf.columnconfigure(0, weight=1)
+        eb = tk.Frame(sf, bg=T["BORDER"], padx=1, pady=1)
+        eb.grid(row=0, column=0, sticky="ew")
+        ei = tk.Frame(eb, bg=T["BG_PANEL"])
+        ei.pack(fill=tk.BOTH)
+        self._search_var = tk.StringVar()
+        self._search_var.trace_add("write", self._on_search)
+        self._filter_entry = tk.Entry(
+            ei, textvariable=self._search_var,
+            font=("Courier New", 11),
+            bg=T["BG_PANEL"], fg=T["TEXT_PRIMARY"],
+            insertbackground=T["ACCENT"],
+            relief="flat", bd=5, highlightthickness=0)
+        self._filter_entry.pack(fill=tk.X)
+        self._filter_entry.bind("<FocusIn>",  self._search_focus_in)
+        self._filter_entry.bind("<FocusOut>", self._search_focus_out)
+        self._filter_entry.bind("<Escape>",   lambda e: self.destroy())
+        self._ph_active = True
+        self._set_ph()
+
+        # ── Текстовая область ─────────────────────────────────────────────────
+        wrap = tk.Frame(self, bg=T["BG_DARK"])
+        wrap.grid(row=3, column=0, sticky="nsew", padx=16, pady=(0, 0))
+        wrap.columnconfigure(1, weight=1)
+        wrap.rowconfigure(0, weight=1)
+
+        tk.Frame(wrap, bg=T["ACCENT"], width=2).grid(row=0, column=0, sticky="ns")
+
+        card = tk.Frame(wrap, bg=T["BG_CARD"],
+                        highlightbackground=T["BORDER"], highlightthickness=1)
+        card.grid(row=0, column=1, sticky="nsew")
+        card.columnconfigure(0, weight=1)
+        card.rowconfigure(0, weight=1)
+
+        tf = tk.Frame(card, bg=T["BG_CARD"])
+        tf.grid(row=0, column=0, sticky="nsew")
+        tf.columnconfigure(0, weight=1)
+        tf.rowconfigure(0, weight=1)
+
+        self._text = tk.Text(
+            tf, wrap=tk.WORD, font=("Courier New", 10),
+            bg=T["BG_CARD"], fg=T["TEXT_PRIMARY"],
+            insertbackground=T["ACCENT"],
+            selectbackground=T["GLOW"],
+            relief="flat", bd=0, padx=14, pady=10, spacing2=3,
+            state=tk.DISABLED)
+        self._text.grid(row=0, column=0, sticky="nsew")
+
+        style = ttk.Style()
+        style.configure("PN.Vertical.TScrollbar",
+                        background=T["SCROLLBAR_BG"], troughcolor=T["SCROLLBAR_BG"],
+                        bordercolor=T["SCROLLBAR_BG"], darkcolor=T["SCROLLBAR_BG"],
+                        lightcolor=T["SCROLLBAR_BG"], arrowcolor=T["TEXT_DIM"],
+                        relief="flat", borderwidth=0)
+        style.map("PN.Vertical.TScrollbar",
+                  background=[("active", T["BG_PANEL"]), ("disabled", T["SCROLLBAR_BG"])],
+                  arrowcolor=[("active", T["ACCENT"])])
+
+        sb = ttk.Scrollbar(tf, orient="vertical", style="PN.Vertical.TScrollbar",
+                           command=self._text.yview)
+        sb.grid(row=0, column=1, sticky="ns")
+        self._text.config(yscrollcommand=sb.set)
+        self._text.bind("<MouseWheel>", lambda e: None)
+
+        # Теги
+        self._text.tag_config("section", foreground=T["ACCENT3"],
+                               font=("Courier New", 10, "bold"))
+        self._text.tag_config("divider", foreground=T["TEXT_MUTED"])
+        self._text.tag_config("note",    foreground=T["TEXT_PRIMARY"])
+        self._text.tag_config("loading", foreground=T["ACCENT3"])
+        self._text.tag_config("error",   foreground=T["ACCENT2"],
+                               font=("Courier New", 10, "bold"))
+        self._text.tag_config("match",   foreground=T["ACCENT"],
+                               font=("Courier New", 10, "bold"))
+
+        # ── Статус-бар ────────────────────────────────────────────────────────
+        self._status_lbl = tk.Label(
+            self, text="", font=("Courier New", 8),
+            fg=T["TEXT_MUTED"], bg=T["BG_DARK"])
+        self._status_lbl.grid(row=4, column=0, sticky="w", padx=18, pady=(4, 8))
+
+        # Показываем загрузку
+        self._write_loading()
+
+        # Храним все секции для фильтрации
+        self._all_sections: list[dict] = []
+
+    # ── Placeholder ───────────────────────────────────────────────────────────
+
+    def _set_ph(self):
+        ph = "  Filter by hero or item…" if self.tr.get("lang") != "ru" else "  Фильтр по герою или предмету…"
+        self._filter_entry.delete(0, tk.END)
+        self._filter_entry.insert(0, ph)
+        self._filter_entry.config(fg=self.T["TEXT_DIM"])
+        self._ph_active = True
+
+    def _search_focus_in(self, event):
+        if self._ph_active:
+            self._filter_entry.delete(0, tk.END)
+            self._filter_entry.config(fg=self.T["TEXT_PRIMARY"])
+            self._ph_active = False
+
+    def _search_focus_out(self, event):
+        if not self._filter_entry.get():
+            self._set_ph()
+
+    # ── Загрузка ──────────────────────────────────────────────────────────────
+
+    def _write_loading(self):
+        self._text.config(state=tk.NORMAL)
+        self._text.delete(1.0, tk.END)
+        self._text.insert(tk.END, f"\n  ⟳  Loading patch {self.patch_version} notes...\n", "loading")
+        self._text.config(state=tk.DISABLED)
+
+    def _load_notes(self):
+        sections = fetch_patch_notes(self.patch_version)
+        self.after(0, self._apply_notes, sections)
+
+    def _apply_notes(self, sections: list[dict]):
+        self._all_sections = sections
+        self._render_sections(sections)
+
+    # ── Рендер ───────────────────────────────────────────────────────────────
+
+    def _render_sections(self, sections: list[dict], query: str = ""):
+        T = self.T
+        txt = self._text
+        txt.config(state=tk.NORMAL)
+        txt.delete(1.0, tk.END)
+
+        if not sections:
+            txt.insert(tk.END, "\n  ✕  No patch notes available.\n", "error")
+            txt.insert(tk.END, f"\n  Patch {self.patch_version} data may not yet be published.\n", "note")
+            self._status_lbl.config(text="0 sections")
+            txt.config(state=tk.DISABLED)
+            return
+
+        total_notes = 0
+        for sec in sections:
+            # Заголовок секции
+            txt.insert(tk.END, "  " + "─" * 50 + "\n", "divider")
+            txt.insert(tk.END, f"  ◈  {sec['title']}\n", "section")
+            txt.insert(tk.END, "  " + "─" * 50 + "\n", "divider")
+            for note in sec["notes"]:
+                line = f"  ·  {note}\n"
+                if query and query.lower() in note.lower():
+                    txt.insert(tk.END, line, "match")
+                else:
+                    txt.insert(tk.END, line, "note")
+                total_notes += 1
+            txt.insert(tk.END, "\n")
+
+        self._status_lbl.config(
+            text=f"{len(sections)} sections  ·  {total_notes} changes"
+        )
+        txt.config(state=tk.DISABLED)
+        txt.yview_moveto(0)
+
+    # ── Фильтр ────────────────────────────────────────────────────────────────
+
+    def _on_search(self, *args):
+        if self._ph_active or not self._all_sections:
+            return
+        query = self._search_var.get().strip()
+        if not query:
+            self._render_sections(self._all_sections)
+            return
+        filtered = []
+        for sec in self._all_sections:
+            matching = [n for n in sec["notes"] if query.lower() in n.lower()]
+            # Также показываем секцию целиком если query совпадает с названием
+            if query.lower() in sec["title"].lower():
+                filtered.append(sec)
+            elif matching:
+                filtered.append({"title": sec["title"], "notes": matching})
+        self._render_sections(filtered, query=query)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # MAIN APP
@@ -648,12 +1029,24 @@ class DotaApp:
                  font=self.font_sub, fg=T["TEXT_DIM"], bg=T["BG_DARK"]).pack(anchor="w")
         right = tk.Frame(hdr, bg=T["BG_DARK"])
         right.pack(side=tk.RIGHT, padx=(0, 4))
+        right.columnconfigure(0, weight=0)
         tk.Label(right, text="◈ LIVE", font=("Courier New", 9, "bold"),
                  fg=T["ACCENT3"], bg=T["BG_DARK"]).pack(anchor="e")
         self.patch_label = tk.Label(right, text=f"PATCH {self._patch_version}",
                                     font=("Courier New", 9, "bold"),
                                     fg=T["ACCENT"], bg=T["BG_DARK"])
-        self.patch_label.pack(anchor="e")
+        self.patch_label.pack(side=tk.LEFT, anchor="e")
+         # Кнопка-инфо рядом с патчем
+        self._patch_info_btn = tk.Button(
+            right, text="ℹ", font=("Courier New", 9, "bold"),
+            bg=T["BG_DARK"], fg=T["TEXT_DIM"],
+            activebackground=T["BG_DARK"], activeforeground=T["ACCENT"],
+            relief="flat", bd=0, cursor="hand2",
+            command=self._open_patch_notes
+        )
+        self._patch_info_btn.pack(side=tk.LEFT, padx=(4, 0), anchor="e")
+        self._patch_info_btn.bind("<Enter>", lambda e: self._patch_info_btn.config(fg=T["ACCENT"]))
+        self._patch_info_btn.bind("<Leave>", lambda e: self._patch_info_btn.config(fg=T["TEXT_DIM"]))
 
     def _build_tab_bar(self, parent):
         T, tr = self.T, self.tr
@@ -1137,6 +1530,9 @@ class DotaApp:
                    "  ·  Crystal Maiden\n", "  ·  Pudge\n"]:
             self.result_area.insert(tk.END, ex, "hero")
         self.result_area.config(state=tk.DISABLED)
+
+    def _open_patch_notes(self):
+            PatchNotesModal(self.root, self.T, self.tr, self._patch_version)
 
     # ── Hero browser ──────────────────────────────────────────────────────────
 
