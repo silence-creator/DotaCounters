@@ -1,7 +1,7 @@
 """Проверка разбора страницы контрпиков на сохранённой странице Dotabuff.
 
 Фикстура — реальная страница Drow Ranger со всеми тремя таблицами, включая
-«Matchups», которую разбирать не нужно.
+«Matchups» — из неё берутся разделы, когда нужно больше пяти строк.
 
 Запуск:  python -m unittest discover -s tests -v
 """
@@ -15,7 +15,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotacounters.dotabuff import (  # noqa: E402
-    CounterReport, ParseError, hero_slug, parse_counters,
+    MAX_LIMIT, CounterReport, ParseError, hero_slug, parse_counters,
 )
 
 FIXTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -45,8 +45,8 @@ class ParseCountersTest(unittest.TestCase):
         self.assertFalse(self.report.degraded,
                          "заголовки должны опознаваться, откат не нужен")
 
-    def test_picks_the_two_short_tables_not_matchups(self):
-        # На странице три таблицы; «Matchups» на 126 строк браться не должна.
+    def test_default_shows_five_rows(self):
+        # По умолчанию — пять строк, как в коротких таблицах Dotabuff.
         self.assertEqual(len(self.report.countered_by), 5)
         self.assertEqual(len(self.report.counters), 5)
 
@@ -90,8 +90,9 @@ class FailsLoudlyTest(unittest.TestCase):
             parse_counters("<html><body><p>ничего</p></body></html>")
 
     def test_shifted_columns_are_rejected(self):
-        # Выкидываем колонку винрейта: на её месте окажется не процент.
-        html = load_fixture().replace("Hero Win Rate", "Matches Played")
+        # Убираем подпись винрейта во ВСЕХ таблицах, включая «Matchups»:
+        # опереться будет не на что, и колонку определить не выйдет.
+        html = load_fixture().replace("Win Rate", "Matches Played")
         with self.assertRaises(ParseError):
             parse_counters(html)
 
@@ -100,6 +101,54 @@ class FailsLoudlyTest(unittest.TestCase):
         with self.assertRaises(ParseError) as ctx:
             parse_counters(html)
         self.assertIn("винрейт", str(ctx.exception))
+
+
+class LimitTest(unittest.TestCase):
+    """Выбор количества строк берёт данные из полной таблицы «Matchups»."""
+
+    def test_default_matches_the_short_tables(self):
+        """При пяти строках вывод обязан совпасть с короткими таблицами.
+
+        Это защита от регрессии: раньше разделы читались именно из них.
+        """
+        report = parse_counters(load_fixture(), "drow-ranger", limit=5)
+        self.assertEqual([m.hero for m in report.countered_by],
+                         ["Mars", "Earth Spirit", "Lycan", "Zeus", "Spectre"])
+        self.assertEqual([m.hero for m in report.counters],
+                         ["Necrophos", "Meepo", "Riki", "Bristleback", "Slardar"])
+
+    def test_twelve_rows(self):
+        report = parse_counters(load_fixture(), "drow-ranger", limit=12)
+        self.assertEqual(len(report.countered_by), 12)
+        self.assertEqual(len(report.counters), 12)
+        # Разделы не должны пересекаться.
+        self.assertFalse({m.hero for m in report.countered_by} &
+                         {m.hero for m in report.counters})
+
+    def test_sections_stay_ordered_by_severity(self):
+        report = parse_counters(load_fixture(), "drow-ranger", limit=12)
+        self.assertEqual(report.countered_by[0].hero, "Mars")
+        self.assertEqual(report.counters[0].hero, "Necrophos")
+
+    def test_limit_is_clamped(self):
+        for asked, expected in ((0, 1), (-5, 1), (99, MAX_LIMIT), (MAX_LIMIT, MAX_LIMIT)):
+            report = parse_counters(load_fixture(), "drow-ranger", limit=asked)
+            self.assertEqual(len(report.countered_by), expected,
+                             "limit=%r должен дать %d строк" % (asked, expected))
+
+    def test_matchups_table_is_parsed(self):
+        report = parse_counters(load_fixture(), "drow-ranger")
+        self.assertEqual(len(report.matchups), 126)
+
+    def test_survives_when_only_matchups_is_readable(self):
+        """Если короткие таблицы сломались, данные всё равно есть.
+
+        Полная таблица независима от них, и разделы берутся из неё.
+        """
+        html = load_fixture().replace("Hero Win Rate", "Matches Played")
+        report = parse_counters(html, "drow-ranger", limit=5)
+        self.assertEqual(report.countered_by[0].hero, "Mars")
+        self.assertEqual(report.counters[0].hero, "Necrophos")
 
 
 class DegradedFallbackTest(unittest.TestCase):

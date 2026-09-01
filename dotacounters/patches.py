@@ -52,139 +52,184 @@ def fetch_current_patch():
     return "7.41b"
 
 
-def fetch_patch_notes(patch_version: str) -> list[dict]:
-    """
-    Загружает список изменений патча через Valve JSON API.
-    Возвращает формат для вашего GUI: [{"title": str, "notes": [str, ...]}, ...]
-    """
-    scraper = create_scraper()
+# ── Заметки к патчу ───────────────────────────────────────────────────────────
+#
+# Формат ответа /datafeed/patchnotes (проверен на 7.41d и 7.41e):
+#
+#   general_notes  список [{title, generic: [{note, indent_level}]}]
+#   items          список [{ability_id, ability_notes: [{note}]}]
+#   neutral_items  список, где записи с is_general_note=true — заголовки уровней
+#   heroes         список [{hero_id, hero_notes: [...], abilities: [...]}]
+#
+# Имён в ответе нет — только числовые идентификаторы, поэтому они разрешаются
+# через отдельные справочники datafeed и кэшируются на время работы программы.
 
+_NAME_FEEDS = {
+    "heroes":    ("https://www.dota2.com/datafeed/herolist?language=%s", "heroes"),
+    "items":     ("https://www.dota2.com/datafeed/itemlist?language=%s", "itemabilities"),
+    "abilities": ("https://www.dota2.com/datafeed/abilitylist?language=%s", "itemabilities"),
+}
+
+_name_cache = {}
+
+
+def _name_map(kind: str, scraper, language: str) -> dict:
+    """Справочник «идентификатор -> имя» для языка. Качается раз на язык."""
+    cache_key = (kind, language)
+    if cache_key in _name_cache:
+        return _name_cache[cache_key]
+    url_tpl, data_key = _NAME_FEEDS[kind]
+    url = url_tpl % language
+    mapping = {}
     try:
-        # Убираем лишние точки, если пользователь ввел "7.35."
-        patch_version = patch_version.strip().strip('.')
+        resp = scraper.get(url, timeout=20)
+        if resp.status_code == 200:
+            entries = resp.json().get("result", {}).get("data", {}).get(data_key, [])
+            for entry in entries:
+                name = entry.get("name_loc") or entry.get("name_english_loc")
+                if name:
+                    mapping[entry.get("id")] = name
+    except Exception:
+        pass  # без имён покажем идентификаторы, это лучше пустого окна
+    _name_cache[cache_key] = mapping
+    return mapping
 
-        # Step 1: Resolve the exact internal version key from the patch list.
-        # Valve's patchnotes API uses a specific key (e.g. "7.41b" or "7.41_2")
-        # that may differ from the display name. We look it up first.
-        resolved_version = patch_version
+
+_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _clean_note(note: str) -> str:
+    """Убрать HTML-теги: Valve кладёт в текст заметок <br> и подобное."""
+    return " ".join(_TAG_RE.sub(" ", note).split())
+
+
+def _notes_from(entries) -> list:
+    """Строки заметок из [{note, indent_level}, ...] с сохранением вложенности."""
+    out = []
+    for entry in entries or []:
+        if not isinstance(entry, dict):
+            continue
+        note = _clean_note(entry.get("note") or entry.get("text") or "")
+        if not note:
+            continue  # заметка была одним лишь тегом
         try:
-            list_url = "https://www.dota2.com/datafeed/patchnoteslist?language=english"
-            list_resp = scraper.get(list_url, timeout=10)
-            if list_resp.status_code == 200:
-                list_data = list_resp.json()
-                patches = list_data.get("patches") or list_data.get("patch_notes") or []
-                # Build a map of display-name → internal key
-                # Each patch entry typically has "patch_number" and optionally a
-                # separate "patch_name" or "version" field used as the API key.
-                for p in reversed(patches):  # newest first
-                    # The internal key used by the /patchnotes endpoint
-                    internal_key = (
-                        p.get("patch_name")
-                        or p.get("version")
-                        or p.get("patch_number")
-                        or ""
-                    )
-                    display_name = (
-                        p.get("patch_number")
-                        or p.get("patch_name")
-                        or p.get("version")
-                        or ""
-                    )
-                    # Match either by display name or by internal key
-                    m_internal = re.search(r'7\.\d+[a-z]?', str(internal_key))
-                    m_display  = re.search(r'7\.\d+[a-z]?', str(display_name))
-                    matched_display  = m_display.group(0)  if m_display  else ""
-                    matched_internal = m_internal.group(0) if m_internal else ""
-                    if matched_display == patch_version or matched_internal == patch_version:
-                        resolved_version = str(internal_key).strip()
-                        break
-                else:
-                    # Fallback: try the last patch in the list
-                    if patches:
-                        last = patches[-1]
-                        resolved_version = str(
-                            last.get("patch_name")
-                            or last.get("version")
-                            or last.get("patch_number")
-                            or patch_version
-                        ).strip()
-        except Exception:
-            pass  # Keep resolved_version = patch_version if lookup fails
+            depth = max(0, int(entry.get("indent_level", 1)) - 1)
+        except (TypeError, ValueError):
+            depth = 0
+        out.append("    " * depth + note)
+    return out
 
-        url = f"https://www.dota2.com/datafeed/patchnotes?version={resolved_version}&language=english"
 
-        resp = scraper.get(url, timeout=12)
+def _resolve_version(patch_version: str, scraper, language: str) -> str:
+    """Уточнить внутренний ключ версии по списку патчей."""
+    version = (patch_version or "").strip().strip(".")
+    try:
+        resp = scraper.get(
+            "https://www.dota2.com/datafeed/patchnoteslist"
+            "?language=%s" % language, timeout=10)
+        if resp.status_code != 200:
+            return version
+        patches = resp.json().get("patches") or []
+        for p in reversed(patches):
+            names = [str(p.get(k) or "") for k in ("patch_name", "patch_number", "version")]
+            if version in names:
+                return str(p.get("patch_name") or p.get("patch_number") or version).strip()
+        if patches and not version:
+            last = patches[-1]
+            return str(last.get("patch_name") or last.get("patch_number") or "").strip()
+    except Exception:
+        pass
+    return version
+
+
+def _item_section(entries, title: str, scraper, language: str) -> dict | None:
+    """Секция по списку предметов; записи-заголовки уровней идут строками."""
+    names, notes = None, []
+    for entry in entries or []:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("is_general_note") and entry.get("title"):
+            notes.append("— %s —" % entry["title"])
+            continue
+        lines = _notes_from(entry.get("ability_notes"))
+        if not lines:
+            continue
+        if names is None:
+            names = _name_map("items", scraper, language)
+        item_id = entry.get("ability_id")
+        name = names.get(item_id) or ("ID %s" % item_id)
+        notes.extend("%s: %s" % (name.upper(), line) for line in lines)
+    return {"title": title, "notes": notes} if notes else None
+
+
+#: Подписи секций по умолчанию, если вызывающий не передал свои.
+DEFAULT_LABELS = {"general": "GENERAL", "items": "ITEMS",
+                  "neutral_items": "NEUTRAL ITEMS"}
+
+
+def fetch_patch_notes(patch_version: str, language: str = "english",
+                      labels: dict | None = None) -> list[dict]:
+    """Заметки к патчу в виде [{"title": str, "notes": [str, ...]}, ...].
+
+    language — код языка для datafeed Valve («english», «russian», …). Текст
+    заметок и названия способностей приходят переведёнными; имена героев Valve
+    оставляет английскими на всех языках, как и в самой игре.
+
+    labels — подписи трёх собственных секций: общей, предметов и нейтральных
+    предметов. Заголовки остальных секций приходят из ответа API.
+    """
+    labels = dict(DEFAULT_LABELS, **(labels or {}))
+    scraper = create_scraper()
+    try:
+        version = _resolve_version(patch_version, scraper, language)
+        resp = scraper.get(
+            "https://www.dota2.com/datafeed/patchnotes"
+            "?version=%s&language=%s" % (version, language), timeout=15)
         if resp.status_code != 200:
             return []
-
         data = resp.json()
-
-        # Valve sometimes wraps everything under a "result" or "patch" key
-        if not any(k in data for k in ("generic_notes", "items", "heroes")):
-            for wrapper_key in ("result", "patch", "data", "notes"):
-                if isinstance(data.get(wrapper_key), dict):
-                    data = data[wrapper_key]
-                    break
-
-        sections = []
-
-        # 1. GENERAL (Это СПИСОК в JSON Valve)
-        generic = data.get("generic_notes")
-        if isinstance(generic, list) and generic:
-            notes = []
-            for entry in generic:
-                note = entry.get("note") or entry.get("text")
-                if note: notes.append(note.strip())
-            if notes:
-                sections.append({"title": "GENERAL", "notes": notes})
-
-        # 2. ITEMS (Это СЛОВАРЬ в JSON Valve)
-        items_data = data.get("items")
-        if isinstance(items_data, dict):
-            item_notes = []
-            for item_key, item_info in items_data.items():
-                # Проверяем, что item_info - это словарь, а не список
-                if isinstance(item_info, dict):
-                    changes = item_info.get("ability_notes") or item_info.get("notes") or []
-                    for ch in changes:
-                        note = ch.get("note") or ch.get("text")
-                        if note:
-                            name = item_key.replace('item_', '').replace('_', ' ').upper()
-                            item_notes.append(f"{name}: {note.strip()}")
-            if item_notes:
-                sections.append({"title": "ITEMS", "notes": item_notes})
-
-        # 3. HEROES (Это СЛОВАРЬ в JSON Valve)
-        heroes_data = data.get("heroes")
-        if isinstance(heroes_data, dict):
-            for hero_key, hero_info in heroes_data.items():
-                if not isinstance(hero_info, dict): continue
-                
-                hero_display = hero_key.replace("npc_dota_hero_", "").replace("_", " ").upper()
-                current_hero_notes = []
-
-                # Заметки героя
-                h_notes = hero_info.get("hero_notes") or []
-                for entry in h_notes:
-                    note = entry.get("note") or entry.get("text")
-                    if note: current_hero_notes.append(note.strip())
-
-                # Способности героя
-                abilities = hero_info.get("abilities") or {}
-                if isinstance(abilities, dict):
-                    for ab_key, ab_info in abilities.items():
-                        if not isinstance(ab_info, dict): continue
-                        ab_notes = ab_info.get("ability_notes") or []
-                        ab_name = ab_key.replace("_", " ").title()
-                        for entry in ab_notes:
-                            note = entry.get("note") or entry.get("text")
-                            if note: current_hero_notes.append(f"[{ab_name}] {note.strip()}")
-
-                if current_hero_notes:
-                    sections.append({"title": hero_display, "notes": current_hero_notes})
-
-        return sections
-
-    except Exception as e:
-        print(f"Критическая ошибка парсинга: {e}")
+    except Exception:
         return []
+
+    sections = []
+
+    # Общие изменения — сгруппированы по собственным заголовкам.
+    for block in data.get("general_notes") or []:
+        if not isinstance(block, dict):
+            continue
+        notes = _notes_from(block.get("generic") or block.get("general"))
+        if notes:
+            title = block.get("title") or labels["general"]
+            sections.append({"title": title.upper(), "notes": notes})
+
+    for entries, title in ((data.get("items"), labels["items"]),
+                           (data.get("neutral_items"), labels["neutral_items"])):
+        section = _item_section(entries, title, scraper, language)
+        if section:
+            sections.append(section)
+
+    # Герои — по секции на героя, способности подписаны именами.
+    hero_entries = data.get("heroes") or []
+    hero_names = _name_map("heroes", scraper, language) if hero_entries else {}
+    ability_names = None
+    for hero in hero_entries:
+        if not isinstance(hero, dict):
+            continue
+        notes = _notes_from(hero.get("hero_notes"))
+        for ability in hero.get("abilities") or []:
+            if not isinstance(ability, dict):
+                continue
+            lines = _notes_from(ability.get("ability_notes"))
+            if not lines:
+                continue
+            if ability_names is None:
+                ability_names = _name_map("abilities", scraper, language)
+            ab_id = ability.get("ability_id")
+            ab_name = ability_names.get(ab_id) or ("ability %s" % ab_id)
+            notes.extend("[%s] %s" % (ab_name, line) for line in lines)
+        if notes:
+            hero_id = hero.get("hero_id")
+            title = hero_names.get(hero_id) or ("HERO %s" % hero_id)
+            sections.append({"title": title.upper(), "notes": notes})
+
+    return sections

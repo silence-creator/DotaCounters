@@ -4,7 +4,7 @@ import json
 import os
 import sys
 
-DEFAULTS = {"theme": "cyber", "lang": "en"}
+DEFAULTS = {"theme": "cyber", "lang": "en", "limit": 5}
 
 
 def _settings_dir():

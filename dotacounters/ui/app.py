@@ -9,7 +9,8 @@ from PIL import Image, ImageTk
 
 from ..config import load_config, save_config
 from ..dotabuff import (
-    DotabuffError, FetchError, HeroNotFound, ParseError, fetch_counters,
+    DEFAULT_LIMIT, MAX_LIMIT, DotabuffError, FetchError, HeroNotFound,
+    ParseError, fetch_counters,
 )
 from ..i18n import I18N
 from ..net import create_scraper
@@ -32,6 +33,7 @@ class DotaApp:
         cfg = load_config()
         self._theme_key = cfg.get("theme", "cyber")
         self._lang      = cfg.get("lang",  "en")
+        self._limit     = self._clamp_limit(cfg.get("limit", DEFAULT_LIMIT))
         self.T          = THEMES[self._theme_key]
         self.tr         = I18N[self._lang]
 
@@ -228,6 +230,23 @@ class DotaApp:
         self.hero_entry.bind("<FocusOut>", self._on_entry_blur)
         self._show_placeholder()
 
+        # Сколько строк показывать в каждом разделе (1..MAX_LIMIT).
+        cnt = tk.Frame(row, bg=T["BG_CARD"])
+        cnt.pack(side=tk.LEFT, padx=(0, 10))
+        tk.Label(cnt, text=tr["count_label"], font=("Courier New", 9, "bold"),
+                 fg=T["TEXT_DIM"], bg=T["BG_CARD"]).pack(side=tk.LEFT, padx=(0, 6))
+        self._limit_var = tk.StringVar(value=str(self._limit))
+        self._limit_spin = tk.Spinbox(
+            cnt, from_=1, to=MAX_LIMIT, width=3, textvariable=self._limit_var,
+            font=("Courier New", 12, "bold"), justify="center",
+            state="readonly", cursor="hand2",
+            bg=T["BG_PANEL"], fg=T["ACCENT3"], readonlybackground=T["BG_PANEL"],
+            buttonbackground=T["BG_PANEL"], insertbackground=T["ACCENT"],
+            relief="flat", bd=0, highlightthickness=1,
+            highlightbackground=T["BORDER"], highlightcolor=T["ACCENT"],
+            command=self._on_limit_change)
+        self._limit_spin.pack(side=tk.LEFT, ipady=4)
+
         self.heroes_btn = tk.Button(row, text=tr["btn_heroes"],
                                     font=("Courier New", 11, "bold"),
                                     bg=T["BG_PANEL"], fg=T["ACCENT3"],
@@ -372,16 +391,19 @@ class DotaApp:
             (tr["set_patch"],  tr["set_patch_val"]),
             (tr["set_built"],  tr["set_built_val"]),
         ]
+        # Каждая запись занимает две строки сетки: сама запись и разделитель
+        # под ней. Раньше разделитель клали в ту же строку, и он перечёркивал
+        # текст.
         for r, (label, val) in enumerate(rows_info):
             tk.Label(about_card, text=f"  {label}", font=("Courier New", 9, "bold"),
                      fg=T["TEXT_DIM"], bg=T["BG_CARD"],
-                     pady=5).grid(row=r, column=0, sticky="w")
+                     pady=5).grid(row=r * 2, column=0, sticky="w")
             tk.Label(about_card, text=val, font=("Courier New", 9),
                      fg=T["TEXT_PRIMARY"], bg=T["BG_CARD"],
-                     pady=5).grid(row=r, column=1, sticky="w", padx=(10, 14))
+                     pady=5).grid(row=r * 2, column=1, sticky="w", padx=(10, 14))
             if r < len(rows_info) - 1:
                 tk.Frame(about_card, bg=T["BORDER"], height=1).grid(
-                    row=r, column=0, columnspan=2, sticky="ew", pady=0)
+                    row=r * 2 + 1, column=0, columnspan=2, sticky="ew")
 
         # Description
         desc_card = tk.Frame(inner, bg=T["BG_PANEL"],
@@ -452,8 +474,10 @@ class DotaApp:
         if subtitle:
             tk.Label(f, text=f"  —  {subtitle}", font=("Courier New", 9),
                      fg=T["TEXT_MUTED"], bg=T["BG_DARK"]).pack(side=tk.LEFT)
-        tk.Frame(parent, bg=T["BORDER"], height=1).grid(
-            row=row, column=0, sticky="ew", padx=20, pady=(0, 10))
+        # Линия идёт ПОСЛЕ текста и добирает оставшуюся ширину. Раньше она
+        # ложилась в ту же ячейку сетки, что и подписи, и перечёркивала их.
+        tk.Frame(f, bg=T["BORDER"], height=1).pack(
+            side=tk.LEFT, fill=tk.X, expand=True, padx=(12, 0))
 
     def _make_theme_card(self, parent, tkey, tdata, name, col, is_active):
         T = self.T
@@ -524,8 +548,24 @@ class DotaApp:
         self._save_prefs()
         self._rebuild()
 
+    @staticmethod
+    def _clamp_limit(value):
+        """Привести значение к допустимому диапазону 1..MAX_LIMIT."""
+        try:
+            n = int(value)
+        except (TypeError, ValueError):
+            n = DEFAULT_LIMIT
+        return max(1, min(n, MAX_LIMIT))
+
+    def _on_limit_change(self):
+        """Новое значение применится при следующем поиске."""
+        self._limit = self._clamp_limit(self._limit_var.get())
+        self._limit_var.set(str(self._limit))
+        self._save_prefs()
+
     def _save_prefs(self):
-        save_config({"theme": self._theme_key, "lang": self._lang})
+        save_config({"theme": self._theme_key, "lang": self._lang,
+                     "limit": self._limit})
 
     def _rebuild(self):
         self._apply_theme_styles()
@@ -668,7 +708,7 @@ class DotaApp:
     def _bg_fetch(self, hero):
         """Сеть и разбор в фоне; исключение довозим до UI как результат."""
         try:
-            outcome = fetch_counters(hero)
+            outcome = fetch_counters(hero, limit=self._limit)
         except DotabuffError as exc:
             outcome = exc
         except Exception as exc:  # непредвиденное — тоже показываем, не глотаем

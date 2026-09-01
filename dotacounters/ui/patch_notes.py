@@ -15,7 +15,7 @@ class PatchNotesModal(tk.Toplevel):
         self.tr = tr
         self.patch_version = patch_version
 
-        self.title(f"Patch {patch_version} Notes")
+        self.title(tr["pn_window_title"].format(version=patch_version))
         self.configure(bg=theme["BG_DARK"])
         self.resizable(True, True)
         self.minsize(560, 500)
@@ -52,7 +52,7 @@ class PatchNotesModal(tk.Toplevel):
         tk.Label(left, text=f"PATCH  {self.patch_version}",
                  font=("Courier New", 18, "bold"),
                  fg=T["ACCENT"], bg=T["BG_DARK"]).pack(anchor="w")
-        tk.Label(left, text="  dota2.com  ·  patch notes",
+        tk.Label(left, text=self.tr["pn_source"],
                  font=("Courier New", 9), fg=T["TEXT_DIM"], bg=T["BG_DARK"]).pack(anchor="w")
 
         close_btn = tk.Button(hdr, text="✕", font=("Courier New", 12, "bold"),
@@ -159,7 +159,7 @@ class PatchNotesModal(tk.Toplevel):
     # ── Placeholder ───────────────────────────────────────────────────────────
 
     def _set_ph(self):
-        ph = "  Filter by hero or item…" if self.tr.get("lang") != "ru" else "  Фильтр по герою или предмету…"
+        ph = self.tr["pn_filter_ph"]
         self._filter_entry.delete(0, tk.END)
         self._filter_entry.insert(0, ph)
         self._filter_entry.config(fg=self.T["TEXT_DIM"])
@@ -180,11 +180,18 @@ class PatchNotesModal(tk.Toplevel):
     def _write_loading(self):
         self._text.config(state=tk.NORMAL)
         self._text.delete(1.0, tk.END)
-        self._text.insert(tk.END, f"\n  ⟳  Loading patch {self.patch_version} notes...\n", "loading")
+        self._text.insert(
+            tk.END, self.tr["pn_loading"].format(version=self.patch_version),
+            "loading")
         self._text.config(state=tk.DISABLED)
 
     def _load_notes(self):
-        sections = fetch_patch_notes(self.patch_version)
+        tr = self.tr
+        sections = fetch_patch_notes(
+            self.patch_version,
+            language=tr["api_language"],
+            labels={"general": tr["pn_general"], "items": tr["pn_items"],
+                    "neutral_items": tr["pn_neutral"]})
         self.after(0, self._apply_notes, sections)
 
     def _apply_notes(self, sections: list[dict]):
@@ -200,9 +207,11 @@ class PatchNotesModal(tk.Toplevel):
         txt.delete(1.0, tk.END)
 
         if not sections:
-            txt.insert(tk.END, "\n  ✕  No patch notes available.\n", "error")
-            txt.insert(tk.END, f"\n  Patch {self.patch_version} data may not yet be published.\n", "note")
-            self._status_lbl.config(text="0 sections")
+            txt.insert(tk.END, self.tr["pn_empty"], "error")
+            txt.insert(
+                tk.END,
+                self.tr["pn_empty_hint"].format(version=self.patch_version), "note")
+            self._status_lbl.config(text=self.tr["pn_status_empty"])
             txt.config(state=tk.DISABLED)
             return
 
@@ -222,7 +231,8 @@ class PatchNotesModal(tk.Toplevel):
             txt.insert(tk.END, "\n")
 
         self._status_lbl.config(
-            text=f"{len(sections)} sections  ·  {total_notes} changes"
+            text=self.tr["pn_status"].format(sections=len(sections),
+                                            notes=total_notes)
         )
         txt.config(state=tk.DISABLED)
         txt.yview_moveto(0)
