@@ -63,6 +63,7 @@ I18N = {
         "pn_general":        "GENERAL",
         "pn_items":          "ITEMS",
         "pn_neutral":        "NEUTRAL ITEMS",
+        "pn_creeps":         "NEUTRAL CREEPS",
         # Settings
         "set_title":         "SETTINGS",
         "set_subtitle":      "Customize your experience",
@@ -145,6 +146,7 @@ I18N = {
         "pn_general":        "ОБЩЕЕ",
         "pn_items":          "ПРЕДМЕТЫ",
         "pn_neutral":        "НЕЙТРАЛЬНЫЕ ПРЕДМЕТЫ",
+        "pn_creeps":         "НЕЙТРАЛЬНЫЕ КРИПЫ",
         # Settings
         "set_title":         "НАСТРОЙКИ",
         "set_subtitle":      "Персонализация интерфейса",

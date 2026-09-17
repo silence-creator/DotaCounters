@@ -1,0 +1,779 @@
+{
+ "patch_number": "7.41",
+ "patch_name": "7.41",
+ "patch_timestamp": 1774335600,
+ "success": true,
+ "general_notes": [
+  {
+   "title": "Global Changes",
+   "generic": [
+    {
+     "indent_level": 1,
+     "note": "Facets removed from the game"
+    },
+    {
+     "indent_level": 1,
+     "note": "Innate abilities no longer scale with other abilities' level"
+    },
+    {
+     "indent_level": 1,
+     "note": "All innate abilities that used to scale with other abilities now either provide unchangeable bonuses or improve on 'per level' basis"
+    },
+    {
+     "indent_level": 2,
+     "note": "Abilities that improve with hero level have base value and increment value. Some also have amount of levels required for increment",
+     "info": "Abilities that improve each level provide their increment value at level 1"
+    },
+    {
+     "indent_level": 1,
+     "note": "Added UI icon that shows you which parameters increase with hero level and what is the current value ",
+     "info": "Pressing ALT key will show base value and increment of the ability"
+    },
+    {
+     "indent_level": 2,
+     "note": "Some non-innate ability might have this per level UI as well"
+    },
+    {
+     "indent_level": 1,
+     "note": "Abilities that had 'per level up' scaling changed to be 'per level'"
+    },
+    {
+     "indent_level": 2,
+     "note": "This mostly affects heroes reworked in update 7.40 and Largo"
+    },
+    {
+     "indent_level": 1,
+     "hide_dot": true,
+     "note": "<br>"
+    },
+    {
+     "indent_level": 1,
+     "note": "Flagbearer Creep Experience Bounty increased from 57 to 60"
+    },
+    {
+     "indent_level": 1,
+     "note": "First +1 siege creep timing decreased from 35:00 to 30:00"
+    },
+    {
+     "indent_level": 1,
+     "note": "Second +1 siege creep timing now occurs at 60:00"
+    },
+    {
+     "indent_level": 1,
+     "hide_dot": true,
+     "note": "<br>"
+    },
+    {
+     "indent_level": 1,
+     "note": "Adjusted the meeting point of the lane creeps toward the offlane"
+    },
+    {
+     "indent_level": 2,
+     "note": "Now offlane creeps are slightly slowed upon leaving the base for a couple of seconds"
+    },
+    {
+     "indent_level": 2,
+     "note": "Safe lane creeps are slightly accelerated upon leaving the base for a couple of seconds"
+    },
+    {
+     "indent_level": 2,
+     "note": "Both of these changes are effective until the 7:30 mark"
+    },
+    {
+     "indent_level": 1,
+     "hide_dot": true,
+     "note": "<br>"
+    },
+    {
+     "indent_level": 1,
+     "note": "All sections of currents now give a max movement speed bonus of 150 ",
+     "info": "Previously was only provided by sections on the base and near it, while other sections provided max bonus of 100"
+    }
+   ]
+  },
+  {
+   "title": "Terrain Changes",
+   "generic": [
+    {
+     "indent_level": 1,
+     "note": "Tormentor spawns have been positioned closer towards Lotus Pools"
+    },
+    {
+     "indent_level": 1,
+     "note": "Tormentor spawn areas have been reduced to low ground relative to the lane's level"
+    },
+    {
+     "indent_level": 1,
+     "note": "Lotus Pools have been moved slightly closer to their respective offlane tower"
+    },
+    {
+     "indent_level": 1,
+     "note": "Twin Gates slightly moved away from the stairs towards the map border"
+    },
+    {
+     "indent_level": 1,
+     "note": "The watcher between the safe lane tier 1 tower and the tormentor has been repositioned"
+    },
+    {
+     "indent_level": 2,
+     "note": "Result:"
+    },
+    {
+     "indent_level": 3,
+     "note": "Tormentor is on the low ground which has three stairs: one leading to the Lotus Pool, one leading to the lane, and one leading to even higher ground area with the Twin Gate"
+    },
+    {
+     "indent_level": 3,
+     "note": "Twin Gate highground area is now smaller and has three stairs: one that leads to new Tormentor area, one that leads back to the lane, and one that goes two levels down straight to the end of the stream"
+    },
+    {
+     "indent_level": 3,
+     "note": "Watcher is now between two stairs: one that goes down to the Tormentor and one that goes up to the Twin Gate"
+    },
+    {
+     "indent_level": 1,
+     "hide_dot": true,
+     "note": "<br>"
+    },
+    {
+     "indent_level": 1,
+     "note": "Ancient neutral camps near stream ends demoted to medium camps and moved slightly towards bases"
+    },
+    {
+     "indent_level": 1,
+     "note": "Medium neutral camp near offlane defender's gate has been demoted to a small neutral camp"
+    },
+    {
+     "indent_level": 1,
+     "hide_dot": true,
+     "note": "<br>"
+    },
+    {
+     "indent_level": 1,
+     "note": "The tier 1 safe lane towers have been moved slightly away from their pull camps and where the creeps meet"
+    },
+    {
+     "indent_level": 1,
+     "note": "Radiant safe lane small camp has been slightly moved north away from the lane"
+    },
+    {
+     "indent_level": 1,
+     "note": "Radiant safe lane hard camp's spawn box has been moved towards the offlane to remove a bad ward location"
+    },
+    {
+     "indent_level": 1,
+     "note": "Radiant offlane tier 2 tower has been adjusted slightly to the left, such that creeps do not path on both sides of the tower"
+    },
+    {
+     "indent_level": 1,
+     "note": "The ramp leading from the Radiant tier 1 tower to the stream has been decreased in width and moved away from the tower"
+    },
+    {
+     "indent_level": 1,
+     "note": "The medium flooded camp near the safe lane tier 2 towers moved closer to the middle of the stream (substantially more for Dire than for Radiant)"
+    },
+    {
+     "indent_level": 1,
+     "note": "The medium flooded camp near the safe lane tier 2 towers can now only evolve once into a hard camp, rather than into an Ancient Camp"
+    },
+    {
+     "indent_level": 1,
+     "note": "The medium flooded camp near the bounty runes can now evolve twice into an Ancient Camp"
+    },
+    {
+     "indent_level": 1,
+     "note": "Removed several trees from Dire Safelane easy pull camp and Radiant Safelane hard pull camp"
+    }
+   ]
+  }
+ ],
+ "items": [
+  {
+   "ability_id": -1,
+   "postfix_lines": 1,
+   "title": "Shop Reshuffle",
+   "is_general_note": true,
+   "ability_notes": [
+    {
+     "indent_level": 1,
+     "note": "Items in all shop categories except for Consumables have been rearranged to accommodate new items"
+    },
+    {
+     "indent_level": 1,
+     "note": "Consumables now includes Infused Raindrops"
+    },
+    {
+     "indent_level": 1,
+     "hide_dot": true,
+     "note": "<br>"
+    }
+   ]
+  },
+  {
+   "ability_id": -1,
+   "postfix_lines": 1,
+   "title": "Basic Items",
+   "is_general_note": true
+  },
+  {
+   "ability_id": 1872,
+   "postfix_lines": 1,
+   "title": "<span class=\"New\">New Miscellaneous Item</span>",
+   "ability_notes": [
+    {
+     "indent_level": 2,
+     "note": "Costs 800 gold"
+    },
+    {
+     "indent_level": 2,
+     "note": "Provides +40 Area of Effect"
+    },
+    {
+     "indent_level": 3,
+     "note": "Area of Effect bonuses from multiple Chasm Stones or its upgrades do not stack"
+    }
+   ]
+  },
+  {
+   "ability_id": 1575,
+   "postfix_lines": 1,
+   "ability_notes": [
+    {
+     "indent_level": 1,
+     "note": "Now also modifies incoming healing ",
+     "info": "As a result of Health Restoration changes"
+    }
+   ]
+  },
+  {
+   "ability_id": 119,
+   "postfix_lines": 1,
+   "title": "<span class=\"Reworked\">Item Reworked</span>",
+   "ability_notes": [
+    {
+     "indent_level": 1,
+     "note": "Recipe changed"
+    },
+    {
+     "indent_level": 2,
+     "note": "Now requires Splintmail (950) and Chasm Stone (800) instead of Veil of Discord (1725)"
+    },
+    {
+     "indent_level": 2,
+     "note": "Recipe cost decreased from 2050 to 1350. Total cost decreased from 5175g to 4500g"
+    },
+    {
+     "indent_level": 1,
+     "note": "No longer provides +5 Strength, +5 Agility, +5 Intelligence, or +5 Health Regen"
+    },
+    {
+     "indent_level": 1,
+     "note": "Armor bonus increased from +15 to +17"
+    },
+    {
+     "indent_level": 1,
+     "note": "Now also provides +75 Area of Effect"
+    },
+    {
+     "indent_level": 2,
+     "note": "Area of Effect bonuses from multiple Chasm Stones or its upgrades do not stack"
+    },
+    {
+     "indent_level": 1,
+     "note": "Arctic Blast damage increased from 200 to 260"
+    },
+    {
+     "indent_level": 1,
+     "note": "Arctic Blast radius decreased from 900 to 825 ",
+     "info": "Effective spell radius unchanged due to item's built-in Area of Effect bonus"
+    },
+    {
+     "indent_level": 1,
+     "note": "Arctic Blast no longer increases damage taken from spells"
+    },
+    {
+     "indent_level": 1,
+     "note": "Freezing Aura no longer reduces Health Restoration and Incoming Heal Amplification by 25%"
+    },
+    {
+     "indent_level": 1,
+     "note": "Freezing Aura now pierces debuff immunity"
+    }
+   ]
+  }
+ ],
+ "neutral_items": [
+  {
+   "ability_id": -1,
+   "postfix_lines": 3,
+   "title": "General changes",
+   "is_general_note": true,
+   "ability_notes": [
+    {
+     "indent_level": 1,
+     "note": "Tier 1 availability changed from 5:00 to 0:00"
+    },
+    {
+     "indent_level": 1,
+     "note": "Madstone crafting cost for Tier 1 items increased from 5 to 6"
+    }
+   ]
+  },
+  {
+   "ability_id": -1,
+   "postfix_lines": 2,
+   "title": "Artifact changes",
+   "is_general_note": true,
+   "ability_notes": [
+    {
+     "indent_level": 1,
+     "note": "Number of artifact choices increased from 4 to 5 for Tiers 2-5"
+    }
+   ]
+  },
+  {
+   "ability_id": 1717,
+   "postfix_lines": 1,
+   "ability_notes": [
+    {
+     "indent_level": 1,
+     "note": "Shield Wall damage barrier increased from 140 to 160"
+    },
+    {
+     "indent_level": 1,
+     "note": "Shield Wall movement speed reduction increased from 12 to 20"
+    }
+   ]
+  },
+  {
+   "ability_id": 565,
+   "postfix_lines": 1,
+   "ability_notes": [
+    {
+     "indent_level": 1,
+     "note": "Chipper damage returned to attacking creeps decreased from 20 to 15"
+    }
+   ]
+  },
+  {
+   "ability_id": 1868,
+   "postfix_lines": 1,
+   "title": "<span class=\"New\">New Tier 1 Artifact</span>",
+   "ability_notes": [
+    {
+     "indent_level": 2,
+     "note": "When this item is off cooldown, the wearer can see trees that can be foraged. Standing next to one of those trees for 1s will give the wearer one of the following items. Cooldown: 60s. Tree reveal radius: 1200"
+    },
+    {
+     "indent_level": 2,
+     "note": "All items except for bag of gold are placed in inventory (if there are slots available) and can stack up to 5 times per slot"
+    },
+    {
+     "indent_level": 2,
+     "note": "Possible items:"
+    },
+    {
+     "indent_level": 3,
+     "note": "Ironwood Nut: Passively provides +3 Movement Speed. Grants +1 Primary Stat when consumed (+.4 all stats for universal heroes)"
+    },
+    {
+     "indent_level": 3,
+     "note": "Tomo'kan Ringcap: Passively Provides +2 Intelligence. Can be consumed to instantly grant a target 50 + 5% of their maximum mana"
+    },
+    {
+     "indent_level": 3,
+     "note": "Vital Toadstool: Passively Provides +2 Damage. Can be consumed to grant a target +1% Max Health Regeneration for 10s. If the unit is attacked by an enemy hero or Roshan the bonus is lost"
+    },
+    {
+     "indent_level": 3,
+     "note": "Bag of Gold: Provides 30 gold to the wearer. Don't need to be picked up"
+    }
+   ]
+  }
+ ],
+ "neutral_creeps": [
+  {
+   "name": "npc_dota_neutral_kobold_taskmaster",
+   "localized_name": "Kobold Foreman",
+   "neutral_creep_notes": [
+    {
+     "indent_level": 1,
+     "note": "Damage increased from 22–24 to 24–26"
+    }
+   ]
+  },
+  {
+   "name": "npc_dota_neutral_kobold_tunneler",
+   "localized_name": "Kobold Soldier",
+   "neutral_creep_notes": [
+    {
+     "indent_level": 1,
+     "note": "Damage increased from 20–21 to 22–23"
+    }
+   ]
+  },
+  {
+   "name": "npc_dota_neutral_kobold",
+   "localized_name": "Kobold",
+   "neutral_creep_notes": [
+    {
+     "indent_level": 1,
+     "note": "Damage increased from 13–14 to 15–16"
+    }
+   ]
+  }
+ ],
+ "heroes": [
+  {
+   "hero_id": 25,
+   "hero_notes": [
+    {
+     "indent_level": 1,
+     "note": "Removed Combustion innate ability"
+    }
+   ],
+   "talent_notes": [
+    {
+     "indent_level": 1,
+     "note": "Level 15 Talent Light Strike Array Damage decreased from +150 to +110"
+    },
+    {
+     "indent_level": 1,
+     "note": "Level 25 Talent +150% Crit On Targets Affected By Spells replaced with 150% Attack Crit on Targets Affected by Slow Burn"
+    },
+    {
+     "indent_level": 1,
+     "note": "Level 25 Talent +60% Combustion Overheat Damage replaced with +1s Slow Burn Duration ",
+     "info": "This increases additional damage from 64% to 80%"
+    }
+   ],
+   "abilities": [
+    {
+     "ability_id": 1244,
+     "ability_notes": [
+      {
+       "indent_level": 1,
+       "note": "New innate ability"
+      },
+      {
+       "indent_level": 2,
+       "note": "Lina's abilities deal an additional 64% damage as undispellable burn damage over 4s"
+      }
+     ]
+    },
+    {
+     "ability_id": 5040,
+     "ability_notes": [
+      {
+       "indent_level": 1,
+       "note": "Damage decreased from 85/165/245/325 to 65/125/185/245"
+      }
+     ]
+    },
+    {
+     "ability_id": 5041,
+     "ability_notes": [
+      {
+       "indent_level": 1,
+       "note": "Damage decreased from 110/160/210/260 to 80/120/160/200"
+      }
+     ]
+    },
+    {
+     "ability_id": 5043,
+     "ability_notes": [
+      {
+       "indent_level": 1,
+       "note": "Damage decreased from 500/750/1000 to 380/565/750"
+      },
+      {
+       "indent_level": 1,
+       "note": "Aghanim's Shard upgrade reworked",
+       "aghanims": "shard"
+      },
+      {
+       "indent_level": 2,
+       "note": "Casting Laguna Blade temporarily supercharges Lina, granting her 12 stacks of Fiery Soul. Supercharge duration: 5s"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "hero_id": 1,
+   "hero_notes": [
+    {
+     "indent_level": 1,
+     "note": "Base Armor increased by 1",
+     "icon": "armor"
+    }
+   ],
+   "talent_notes": [
+    {
+     "indent_level": 1,
+     "note": "Level 15 Talent +1% Max Mana Mana Burn replaced with +0.2 Mana Void Damage Multiplier"
+    },
+    {
+     "indent_level": 1,
+     "note": "Level 20 Talent +0.2 Mana Void Damage Multiplier replaced with +150 Blink Cast Range"
+    },
+    {
+     "indent_level": 1,
+     "note": "Level 25 Talent +200 Blink Cast Range replaced with -1s Blink Cooldown"
+    }
+   ],
+   "abilities": [
+    {
+     "ability_id": 1447,
+     "ability_notes": [
+      {
+       "indent_level": 1,
+       "note": "No longer levels with Mana Void"
+      },
+      {
+       "indent_level": 1,
+       "note": "Min Movement Slow rescaled from 12.5/15/17.5/20% to 12% + 0.5% per level"
+      },
+      {
+       "indent_level": 1,
+       "note": "Max Movement Slow rescaled from 25/30/35/40% to 24% + 1% per level"
+      }
+     ]
+    },
+    {
+     "ability_id": 5003,
+     "ability_notes": [
+      {
+       "indent_level": 1,
+       "note": "Effectiveness when applied by illusions decreased from 50% to 25%"
+      },
+      {
+       "indent_level": 1,
+       "note": "Now upgraded with Aghanim's Scepter",
+       "aghanims": "scepter"
+      },
+      {
+       "indent_level": 2,
+       "note": "Increases Max Mana Burned per hit by an additional 1.5%"
+      }
+     ]
+    },
+    {
+     "ability_id": 5004,
+     "ability_notes": [
+      {
+       "indent_level": 1,
+       "note": "Cast Range rescaled from 750/900/1050/1200 to 875/950/1025/1100"
+      },
+      {
+       "indent_level": 1,
+       "note": "Cooldown decreased from 12/10/8/6s to 10.5/9/7.5/6s"
+      },
+      {
+       "indent_level": 1,
+       "note": "Mana Cost increased from 50 to 65/60/55/50"
+      },
+      {
+       "indent_level": 1,
+       "note": "Aghanim's Scepter no longer decreases cooldown by 1s",
+       "aghanims": "scepter"
+      }
+     ]
+    },
+    {
+     "ability_id": 7314,
+     "ability_notes": [
+      {
+       "indent_level": 1,
+       "note": "Magic Resistance decreased from 16/24/32/40% to 14/21/28/35%"
+      },
+      {
+       "indent_level": 1,
+       "note": "Duration increased from 1.2s to 1.3s"
+      }
+     ]
+    },
+    {
+     "ability_id": 5006,
+     "ability_notes": [
+      {
+       "indent_level": 1,
+       "note": "Cooldown increased from 70s to 100/85/70s"
+      },
+      {
+       "indent_level": 1,
+       "note": "Radius decreased from 500 to 400/450/500"
+      },
+      {
+       "indent_level": 1,
+       "note": "Damage per 1 Mana Missing rescaled from 0.8/0.95/1.1 to 1"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "hero_id": 3,
+   "hero_notes": [
+    {
+     "indent_level": 1,
+     "note": "Strength gain decreased from 2.7 to 2.5",
+     "icon": "strength"
+    },
+    {
+     "indent_level": 1,
+     "note": "Agility gain decreased from 2.7 to 2.5",
+     "icon": "agility"
+    },
+    {
+     "indent_level": 1,
+     "note": "Intelligence gain decreased from 2.7 to 2.5",
+     "icon": "intelligence"
+    },
+    {
+     "indent_level": 2,
+     "note": "Damage gain per level decreased from 3.6 to 3.4",
+     "icon": "damage"
+    },
+    {
+     "indent_level": 1,
+     "note": "Attack Range increased from 400 to 425",
+     "icon": "attack_range"
+    }
+   ],
+   "abilities": [
+    {
+     "ability_id": 1202,
+     "ability_notes": [
+      {
+       "indent_level": 1,
+       "note": "Ability reworked"
+      },
+      {
+       "indent_level": 2,
+       "note": "Every time Bane kills an enemy hero or they die under the effect of any debuff applied by Bane, they receive a Terror for the rest of the game. Each Terror stack decreases the enemy's status resistance to all Bane's debuffs by 5%. Max Terror stacks per hero: 5"
+      }
+     ]
+    },
+    {
+     "ability_id": 5014,
+     "ability_notes": [
+      {
+       "indent_level": 1,
+       "note": "Now a Unit Vector Target Spell"
+      },
+      {
+       "indent_level": 1,
+       "note": "Sleeping units walk in Bane's chosen direction at a speed of 110"
+      },
+      {
+       "indent_level": 2,
+       "note": "Can be put on alt-cast to disable sleepwalking behavior"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "hero_id": 22,
+   "hero_notes": [
+    {
+     "indent_level": 1,
+     "note": "Base Strength increased from 19 to 21",
+     "icon": "strength"
+    },
+    {
+     "indent_level": 1,
+     "note": "Base Damage increased by 1–3 ",
+     "info": "Damage spread increased from 8 to 10",
+     "icon": "damage"
+    },
+    {
+     "indent_level": 2,
+     "note": "Damage at level 1 increased from 52–60 to 53–63",
+     "icon": "damage"
+    },
+    {
+     "indent_level": 1,
+     "note": "Base Movement Speed decreased from 315 to 305",
+     "icon": "movement"
+    },
+    {
+     "indent_level": 1,
+     "note": "Base Armor decreased by 1",
+     "icon": "armor"
+    }
+   ],
+   "talent_notes": [
+    {
+     "indent_level": 1,
+     "note": "Level 15 Talent -0.4s Arc Lightning Cooldown replaced with -20% Arc Lightning Mana Cost/Cooldown"
+    },
+    {
+     "indent_level": 1,
+     "note": "Level 25 Talent +2% Static Field Damage replaced with 3 Heavenly Jump Charges"
+    }
+   ],
+   "abilities": [
+    {
+     "ability_id": 5112,
+     "ability_notes": [
+      {
+       "indent_level": 1,
+       "note": "No longer levels with Thundergod's Wrath"
+      },
+      {
+       "indent_level": 1,
+       "note": "Damage changed from 2.5/3/3.5/4% to 3.45% + 0.05% per level"
+      }
+     ]
+    },
+    {
+     "ability_id": 5110,
+     "ability_notes": [
+      {
+       "indent_level": 1,
+       "note": "Mana Cost rescaled from 75/85/95/105 to 85/90/95/100"
+      },
+      {
+       "indent_level": 1,
+       "note": "Base Damage increased from 90/120/150/180 to 105/130/155/180"
+      }
+     ]
+    },
+    {
+     "ability_id": 5111,
+     "ability_notes": [
+      {
+       "indent_level": 1,
+       "note": "Vision and True Sight radius increased from 500 to 600"
+      }
+     ]
+    },
+    {
+     "ability_id": 5113,
+     "ability_notes": [
+      {
+       "indent_level": 1,
+       "note": "Now applies the True Sight before the damage and strikes even untargetable and still invisible enemies ",
+       "info": "It used to simply reveal invisible heroes without dealing damage to them. Now it will work similarly to Lightning Bolt, dealing damage even to units affected by Smoke of Deceit, Dark Willow's Shadow Realm, Phantom Assassin's Blur, Slark's Shadow Dance or Depth Shroud, etc."
+      },
+      {
+       "indent_level": 1,
+       "note": "Vision and True Sight radius increased from 500 to 600"
+      }
+     ]
+    },
+    {
+     "ability_id": 6325,
+     "ability_notes": [
+      {
+       "indent_level": 1,
+       "note": "Damage source changed from Nimbus to the caster"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

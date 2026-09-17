@@ -4,11 +4,17 @@ import threading
 import tkinter as tk
 from tkinter import ttk
 
-from ..patches import fetch_patch_notes
+from PIL import Image, ImageTk
+
+from ..icons import fetch_icons
+from ..patches import BADGE_MARK, fetch_patch_notes
 from .winapi import set_title_bar_color
 
 
 class PatchNotesModal(tk.Toplevel):
+    #: Размер рамки иконки в строке заметки: под высоту шрифта Courier New 10.
+    ICON_BOX = (24, 16)
+
     def __init__(self, parent, theme: dict, tr: dict, patch_version: str):
         super().__init__(parent)
         self.T = theme
@@ -143,6 +149,9 @@ class PatchNotesModal(tk.Toplevel):
                                font=("Courier New", 10, "bold"))
         self._text.tag_config("match",   foreground=T["ACCENT"],
                                font=("Courier New", 10, "bold"))
+        # Метки «New Item», «Item Reworked» — заметным цветом
+        self._text.tag_config("badge",   foreground=T["ACCENT2"],
+                               font=("Courier New", 10, "bold"))
 
         # ── Статус-бар ────────────────────────────────────────────────────────
         self._status_lbl = tk.Label(
@@ -155,6 +164,10 @@ class PatchNotesModal(tk.Toplevel):
 
         # Храним все секции для фильтрации
         self._all_sections: list[dict] = []
+        # Готовые иконки по адресу. Ссылки держим здесь: Tk не хранит их сам,
+        # и без этого картинки исчезнут, собранные сборщиком мусора.
+        self._photos: dict = {}
+        self._blank = None
 
     # ── Placeholder ───────────────────────────────────────────────────────────
 
@@ -186,23 +199,50 @@ class PatchNotesModal(tk.Toplevel):
         self._text.config(state=tk.DISABLED)
 
     def _load_notes(self):
+        """Фоновый поток: сначала текст, потом иконки — текст не ждёт картинок."""
         tr = self.tr
         sections = fetch_patch_notes(
             self.patch_version,
             language=tr["api_language"],
             labels={"general": tr["pn_general"], "items": tr["pn_items"],
-                    "neutral_items": tr["pn_neutral"]})
-        self.after(0, self._apply_notes, sections)
+                    "neutral_items": tr["pn_neutral"],
+                    "neutral_creeps": tr["pn_creeps"]})
+        if not self._safe_after(self._apply_notes, sections):
+            return
+
+        urls = [sec.get("icon") for sec in sections]
+        for sec in sections:
+            urls.extend(sec.get("icons") or [])
+        if any(urls):
+            self._safe_after(self._apply_icons, fetch_icons(urls, box=self.ICON_BOX))
+
+    def _safe_after(self, fn, *args) -> bool:
+        """Передать вызов в главный поток; False, если окно уже закрыто."""
+        try:
+            self.after(0, fn, *args)
+            return True
+        except (tk.TclError, RuntimeError):
+            return False
 
     def _apply_notes(self, sections: list[dict]):
         self._all_sections = sections
         self._render_sections(sections)
 
+    def _apply_icons(self, images: dict):
+        """Превратить скачанные картинки в PhotoImage и перерисовать заметки."""
+        if not images or not self.winfo_exists():
+            return
+        # PhotoImage создаётся только здесь, в главном потоке Tk.
+        self._photos = {url: ImageTk.PhotoImage(img) for url, img in images.items()}
+        self._blank = ImageTk.PhotoImage(Image.new("RGBA", self.ICON_BOX, (0, 0, 0, 0)))
+        self._rerender()
+
     # ── Рендер ───────────────────────────────────────────────────────────────
 
-    def _render_sections(self, sections: list[dict], query: str = ""):
-        T = self.T
+    def _render_sections(self, sections: list[dict], query: str = "",
+                         keep_scroll: bool = False):
         txt = self._text
+        top = txt.yview()[0] if keep_scroll else 0.0
         txt.config(state=tk.NORMAL)
         txt.delete(1.0, tk.END)
 
@@ -215,18 +255,42 @@ class PatchNotesModal(tk.Toplevel):
             txt.config(state=tk.DISABLED)
             return
 
+        photos = self._photos
         total_notes = 0
         for sec in sections:
-            # Заголовок секции
+            # Заголовок секции, у героев — с иконкой героя
             txt.insert(tk.END, "  " + "─" * 50 + "\n", "divider")
-            txt.insert(tk.END, f"  ◈  {sec['title']}\n", "section")
+            txt.insert(tk.END, "  ◈  ", "section")
+            head_icon = photos.get(sec.get("icon"))
+            if head_icon:
+                txt.image_create(tk.END, image=head_icon, align="center")
+                txt.insert(tk.END, " ", "section")
+            txt.insert(tk.END, f"{sec['title']}\n", "section")
             txt.insert(tk.END, "  " + "─" * 50 + "\n", "divider")
-            for note in sec["notes"]:
-                line = f"  ·  {note}\n"
+
+            notes = sec["notes"]
+            icons = sec.get("icons") or [None] * len(notes)
+            groups = sec.get("groups") or list(range(len(notes)))
+            # Колонку иконок держим только там, где есть хоть одна картинка:
+            # в общих разделах лишний отступ ни к чему.
+            with_icons = any(url in photos for url in icons)
+            prev_group = object()
+            for note, url, group in zip(notes, icons, groups):
                 if query and query.lower() in note.lower():
-                    txt.insert(tk.END, line, "match")
+                    tag = "match"
+                elif note.startswith(BADGE_MARK):
+                    tag = "badge"
                 else:
-                    txt.insert(tk.END, line, "note")
+                    tag = "note"
+                txt.insert(tk.END, "  ·  ", tag)
+                if with_icons:
+                    # Иконка — на первой строке группы (предмета, способности),
+                    # на остальных строках той же группы — пустая рамка.
+                    icon = photos.get(url) if group != prev_group else None
+                    txt.image_create(tk.END, image=icon or self._blank, align="center")
+                    txt.insert(tk.END, " ", tag)
+                txt.insert(tk.END, note + "\n", tag)
+                prev_group = group
                 total_notes += 1
             txt.insert(tk.END, "\n")
 
@@ -235,9 +299,43 @@ class PatchNotesModal(tk.Toplevel):
                                             notes=total_notes)
         )
         txt.config(state=tk.DISABLED)
-        txt.yview_moveto(0)
+        txt.yview_moveto(top)
+
+    def _rerender(self):
+        """Перерисовать текущий вид — с учётом фильтра и позиции прокрутки."""
+        query = "" if self._ph_active else self._search_var.get().strip()
+        sections = self._filtered(query) if query else self._all_sections
+        self._render_sections(sections, query=query, keep_scroll=True)
 
     # ── Фильтр ────────────────────────────────────────────────────────────────
+
+    def _filtered(self, query: str) -> list[dict]:
+        """Секции, где совпало название или хотя бы одна строка.
+
+        Иконки и группы фильтруются вместе со строками, чтобы не съехать с них.
+        """
+        q = query.lower()
+        out = []
+        for sec in self._all_sections:
+            # Совпало название секции — показываем её целиком
+            if q in sec["title"].lower():
+                out.append(sec)
+                continue
+            notes = sec["notes"]
+            icons = sec.get("icons") or [None] * len(notes)
+            groups = sec.get("groups") or list(range(len(notes)))
+            keep = [i for i, note in enumerate(notes) if q in note.lower()]
+            if keep:
+                # Метка «New Item» остаётся со своим предметом, даже если сама
+                # под фильтр не попала: иначе новый предмет выглядел бы старым.
+                kept_groups = {groups[i] for i in keep}
+                keep = sorted(set(keep) | {i for i, note in enumerate(notes)
+                                           if note.startswith(BADGE_MARK)
+                                           and groups[i] in kept_groups})
+                out.append(dict(sec, notes=[notes[i] for i in keep],
+                                icons=[icons[i] for i in keep],
+                                groups=[groups[i] for i in keep]))
+        return out
 
     def _on_search(self, *args):
         if self._ph_active or not self._all_sections:
@@ -246,12 +344,4 @@ class PatchNotesModal(tk.Toplevel):
         if not query:
             self._render_sections(self._all_sections)
             return
-        filtered = []
-        for sec in self._all_sections:
-            matching = [n for n in sec["notes"] if query.lower() in n.lower()]
-            # Также показываем секцию целиком если query совпадает с названием
-            if query.lower() in sec["title"].lower():
-                filtered.append(sec)
-            elif matching:
-                filtered.append({"title": sec["title"], "notes": matching})
-        self._render_sections(filtered, query=query)
+        self._render_sections(self._filtered(query), query=query)
