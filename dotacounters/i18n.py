@@ -88,7 +88,16 @@ I18N = {
         # Updates
         "upd_title":         "UPDATES",
         "upd_subtitle":      "Program update history",
-        "upd_text":          f"v{APP_VERSION}\nFirst public release. Counter-pick search via Dotabuff with hero icons and win rates, a built-in hero browser with live search, an in-app reader for the current Dota 2 patch notes, five colour themes and an English/Russian interface. Settings persist between sessions.",
+        # История изменений: номера в записях — прошлое, поэтому зашиты явно.
+        # Верхняя запись обязана совпадать с APP_VERSION — это проверяет тест.
+        "upd_text":          "v1.1\n"
+                             "Counter search: choose how many counters to show in each section, from 1 to 12.\n"
+                             "Patch notes: the window is no longer empty. Notes follow the interface language and show hero, item, ability, stat, talent and Aghanim's icons. Talents, neutral creeps, explanatory notes and New Item badges are no longer missing.\n"
+                             "Clearer messages when a hero is not found or Dotabuff changes its page layout.\n"
+                             "Settings: section dividers no longer strike through their labels.\n"
+                             "\n"
+                             "v1.0\n"
+                             "First public release. Counter-pick search via Dotabuff with hero icons and win rates, a built-in hero browser with live search, an in-app reader for the current Dota 2 patch notes, five colour themes and an English/Russian interface. Settings persist between sessions.",
     },
     "ru": {
         "app_subtitle":      f"С И С Т Е М А  А Н А Л И З А  К О Н Т Е Р П И К О В  v {SPACED_VERSION}",
@@ -171,6 +180,13 @@ I18N = {
         # Updates
         "upd_title":         "ОБНОВЛЕНИЯ",
         "upd_subtitle":      "История обновлений программы",
-        "upd_text":          f"v{APP_VERSION}\nПервый публичный релиз. Поиск контрпиков через Dotabuff с иконками героев и винрейтами, встроенный список героев с живым поиском, просмотр патчноутов текущего патча Dota 2 прямо в программе, пять цветовых тем и интерфейс на русском и английском. Настройки сохраняются между запусками.",
+        "upd_text":          "v1.1\n"
+                             "Поиск: можно выбрать, сколько контрпиков показывать в каждом разделе, — от 1 до 12.\n"
+                             "Изменения патча: окно больше не пустое. Текст идёт на языке интерфейса, с иконками героев, предметов, способностей, характеристик, талантов и Аганима. Больше не теряются таланты, нейтральные крипы, пояснения и пометки новых предметов.\n"
+                             "Понятные сообщения, если герой не найден или Dotabuff изменил страницу.\n"
+                             "Настройки: разделители больше не перечёркивают подписи.\n"
+                             "\n"
+                             "v1.0\n"
+                             "Первый публичный релиз. Поиск контрпиков через Dotabuff с иконками героев и винрейтами, встроенный список героев с живым поиском, просмотр патчноутов текущего патча Dota 2 прямо в программе, пять цветовых тем и интерфейс на русском и английском. Настройки сохраняются между запусками.",
     },
 }

@@ -6,7 +6,7 @@ from tkinter import ttk
 
 from PIL import Image, ImageTk
 
-from ..icons import fetch_icons
+from ..icons import fetch_icons, is_glyph, tint
 from ..patches import BADGE_MARK, fetch_patch_notes
 from .winapi import set_title_bar_color
 
@@ -232,8 +232,12 @@ class PatchNotesModal(tk.Toplevel):
         """Превратить скачанные картинки в PhotoImage и перерисовать заметки."""
         if not images or not self.winfo_exists():
             return
-        # PhotoImage создаётся только здесь, в главном потоке Tk.
-        self._photos = {url: ImageTk.PhotoImage(img) for url, img in images.items()}
+        # PhotoImage создаётся только здесь, в главном потоке Tk. Одноцветные
+        # значки (талант) красятся в цвет текста темы, иначе на светлой теме
+        # белый значок не виден.
+        self._photos = {
+            url: ImageTk.PhotoImage(tint(img, self.T["TEXT_PRIMARY"]) if is_glyph(url) else img)
+            for url, img in images.items()}
         self._blank = ImageTk.PhotoImage(Image.new("RGBA", self.ICON_BOX, (0, 0, 0, 0)))
         self._rerender()
 
@@ -271,9 +275,11 @@ class PatchNotesModal(tk.Toplevel):
             notes = sec["notes"]
             icons = sec.get("icons") or [None] * len(notes)
             groups = sec.get("groups") or list(range(len(notes)))
-            # Колонку иконок держим только там, где есть хоть одна картинка:
-            # в общих разделах лишний отступ ни к чему.
-            with_icons = any(url in photos for url in icons)
+            # Колонку иконок держим в разделах, где иконки положены по смыслу,
+            # даже если какая-то не скачалась: у Ursa единственная способность
+            # Maul без картинки на CDN, и раздел выглядел сдвинутым. В общих
+            # разделах, где иконок нет вовсе, лишний отступ ни к чему.
+            with_icons = bool(photos) and any(icons)
             prev_group = object()
             for note, url, group in zip(notes, icons, groups):
                 if query and query.lower() in note.lower():

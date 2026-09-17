@@ -12,7 +12,8 @@ from PIL import Image
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotacounters.icons import (  # noqa: E402
-    LOCAL_ICON_PREFIX, draw_local_icon, fit_to_box, rasterize_svg, thicken,
+    LOCAL_ICON_PREFIX, draw_local_icon, fit_to_box, is_glyph, rasterize_svg,
+    thicken, tint,
 )
 from dotacounters.patches import (  # noqa: E402
     ICON_CDN, ability_icon_url, hero_icon_url, item_icon_url, stat_icon_url,
@@ -114,6 +115,24 @@ class RasterizeSvgTest(unittest.TestCase):
         for svg in (arc, stray, '<svg><path d="M0 0 L1 1 Z"/></svg>'):
             with self.assertRaises(ValueError):
                 rasterize_svg(svg, 20)
+
+    def test_tint_keeps_shape_changes_colour(self):
+        img = rasterize_svg(self.RING, height=100)
+        dark = tint(img, "#1a2030")
+        self.assertEqual(dark.getpixel((10, 10))[:3], (0x1a, 0x20, 0x30))
+        self.assertEqual(dark.getchannel("A").tobytes(), img.getchannel("A").tobytes())
+
+    def test_only_svg_is_a_glyph(self):
+        self.assertTrue(is_glyph(ICON_CDN + "/icons/talents.svg"))
+        self.assertFalse(is_glyph(ICON_CDN + "/items/blink.png"))
+        self.assertFalse(is_glyph(LOCAL_ICON_PREFIX + "health_regen"),
+                         "рисованные значки регенерации цветные — не перекрашиваем")
+        self.assertFalse(is_glyph(None))
+
+    def test_all_themes_have_a_hex_text_colour(self):
+        from dotacounters.themes import THEMES
+        for name, theme in THEMES.items():
+            self.assertRegex(theme["TEXT_PRIMARY"], r"^#[0-9a-fA-F]{6}$", name)
 
     def test_thicken_widens_thin_lines(self):
         img = Image.new("RGBA", (96, 96), (0, 0, 0, 0))

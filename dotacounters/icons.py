@@ -199,6 +199,23 @@ def rasterize_svg(svg: str, height: int = 128) -> Image.Image:
     return canvas
 
 
+def tint(img: Image.Image, color: str) -> Image.Image:
+    """Перекрасить одноцветный значок в color («#rrggbb»), сохранив прозрачность.
+
+    SVG-значки Valve белые — под тёмный сайт. На светлой теме Ghost White белый
+    значок таланта сливался с фоном, поэтому интерфейс красит его в цвет текста.
+    """
+    rgb = tuple(int(color[i:i + 2], 16) for i in (1, 3, 5))
+    out = Image.new("RGBA", img.size, rgb + (255,))
+    out.putalpha(img.getchannel("A"))
+    return out
+
+
+def is_glyph(url: str | None) -> bool:
+    """Одноцветный значок, который стоит красить под тему: пока это SVG."""
+    return bool(url) and url.lower().endswith(".svg")
+
+
 def thicken(img: Image.Image, ratio: float = 7 / 96) -> Image.Image:
     """Утолщить тонкий контурный значок перед ужатием до размера строки.
 

@@ -3,6 +3,7 @@
 import io
 import threading
 import tkinter as tk
+from tkinter import font as tkfont
 from tkinter import ttk
 
 from PIL import Image, ImageTk
@@ -462,8 +463,28 @@ class DotaApp:
                        selectbackground=T["GLOW"],
                        relief="flat", bd=0, padx=16, pady=12, spacing2=2, height=10)
         text.grid(row=0, column=0, sticky="ew")
-        text.insert(tk.END, tr["upd_text"])
+        text.tag_config("version", foreground=T["ACCENT"],
+                        font=("Courier New", 11, "bold"), spacing1=4)
+        for line in tr["upd_text"].split("\n"):
+            is_header = line.startswith("v") and line[1:2].isdigit()
+            text.insert(tk.END, line + "\n", "version" if is_header else ())
+        text.delete("end-2c")  # лишний перевод строки в конце
         text.config(state=tk.DISABLED)
+
+        # Высота поля — по фактической высоте текста с учётом переносов. С жёсткой
+        # высотой в 10 строк история из двух версий обрезалась. Считаем в пикселях:
+        # заголовки версий крупнее основного шрифта и с отступом, и счёт строк
+        # занижал высоту. Пересчитываем при изменении ширины — от неё зависят
+        # переносы.
+        line_px = tkfont.Font(font=text.cget("font")).metrics("linespace")
+
+        def fit_height(event=None):
+            shown = text.count("1.0", "end", "ypixels")
+            pixels = (shown[0] if isinstance(shown, tuple) else shown) or 0
+            lines = max(1, -(-pixels // line_px))  # округление вверх
+            if int(text.cget("height")) != lines:
+                text.config(height=lines)
+        text.bind("<Configure>", fit_height)
 
     def _add_section_header(self, parent, row, title, subtitle):
         T = self.T
