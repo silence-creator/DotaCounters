@@ -18,6 +18,7 @@ from ..dotabuff import (
     DEFAULT_LIMIT, MAX_LIMIT, DotabuffError, FetchError, HeroNotFound,
     ParseError, fetch_counters,
 )
+from ..draft import MAX_ENEMIES, analyse
 from ..heroes import suggest
 from ..i18n import I18N
 from ..net import create_scraper
@@ -26,6 +27,7 @@ from ..themes import THEMES
 from ..version import APP_VERSION
 from .hero_browser import HeroBrowserModal
 from .patch_notes import PatchNotesModal
+from .suggestions import HeroSuggestions
 from .winapi import set_title_bar_color
 
 
@@ -46,10 +48,10 @@ class DotaApp:
         self.tr         = I18N[self._lang]
 
         self.hero_images       = []
-        self._suggest_visible  = False
         self._placeholder_active = False
         self._patch_version    = "…"
-        self._active_tab       = "search"   # "search" | "settings" | "updates"
+        self._active_tab       = "search"   # search | draft | settings | updates
+        self._enemies          = []         # вражеский состав для драфта
         self._update           = None       # dotacounters.updates.Update, когда есть
         self._update_btn       = None
         self._update_status    = None
@@ -131,6 +133,7 @@ class DotaApp:
         self._content.rowconfigure(0, weight=1)
 
         self._build_search_page()
+        self._build_draft_page()
         self._build_settings_page()
         self._build_updates_page()
         self._build_footer(outer)
@@ -318,7 +321,8 @@ class DotaApp:
         bar.grid(row=1, column=0, sticky="ew", pady=(0, 0))
 
         self._tab_btns = {}
-        tabs = [("search", tr["tab_search"]), ("settings", tr["tab_settings"]), ("updates", tr["tab_updates"])]
+        tabs = [("search", tr["tab_search"]), ("draft", tr["tab_draft"]),
+                ("settings", tr["tab_settings"]), ("updates", tr["tab_updates"])]
         for key, label in tabs:
             btn = tk.Button(
                 bar, text=label, font=self.font_tab,
@@ -344,19 +348,14 @@ class DotaApp:
                 btn.config(fg=T["TEXT_DIM"],
                            bg=T["BG_DARK"],
                            relief="flat")
-        # Show/hide pages
-        if key == "search":
-            self._search_page.grid(row=0, column=0, sticky="nsew")
-            self._settings_page.grid_remove()
-            self._updates_page.grid_remove()
-        elif key == "settings":
-            self._settings_page.grid(row=0, column=0, sticky="nsew")
-            self._search_page.grid_remove()
-            self._updates_page.grid_remove()
-        else:
-            self._updates_page.grid(row=0, column=0, sticky="nsew")
-            self._search_page.grid_remove()
-            self._settings_page.grid_remove()
+        # Показываем одну страницу, остальные прячем
+        pages = {"search": self._search_page, "draft": self._draft_page,
+                 "settings": self._settings_page, "updates": self._updates_page}
+        for name, page in pages.items():
+            if name == key:
+                page.grid(row=0, column=0, sticky="nsew")
+            else:
+                page.grid_remove()
 
     # ── Search page ───────────────────────────────────────────────────────────
 
@@ -388,27 +387,14 @@ class DotaApp:
                                    insertbackground=T["ACCENT"],
                                    relief="flat", bd=6, highlightthickness=0)
         self.hero_entry.pack(fill=tk.X)
-        self.hero_entry.bind("<Return>", self._on_entry_return)
         self.hero_entry.bind("<FocusIn>",  self._on_entry_focus)
         self.hero_entry.bind("<FocusOut>", self._on_entry_blur)
-        self.hero_entry.bind("<KeyRelease>", self._on_entry_key)
-        self.hero_entry.bind("<Down>", self._suggest_move_down)
-        self.hero_entry.bind("<Up>", self._suggest_move_up)
-        self.hero_entry.bind("<Escape>", lambda e: self._hide_suggestions())
         self._show_placeholder()
+        self._suggest = HeroSuggestions(
+            page, self.hero_entry, T, self.font_entry,
+            on_accept=self._search_hero,
+            placeholder_active=lambda: self._placeholder_active)
 
-        # Выпадающие подсказки. Лежат поверх остальной страницы, поэтому
-        # размещаются через place, а не в сетке.
-        self._suggest_box = tk.Listbox(
-            page, font=self.font_entry, activestyle="none", exportselection=False,
-            bg=T["BG_PANEL"], fg=T["TEXT_PRIMARY"],
-            selectbackground=T["GLOW"], selectforeground=T["ACCENT"],
-            relief="flat", bd=0, highlightthickness=1,
-            highlightbackground=T["ACCENT"], highlightcolor=T["ACCENT"])
-        self._suggest_box.bind("<Button-1>", self._on_suggest_click)
-        self._suggest_box.bind("<Return>", lambda e: self._accept_suggestion())
-        self._suggest_box.bind("<Escape>", lambda e: self._hide_suggestions())
-        self._suggest_visible = False
 
         # Сколько строк показывать в каждом разделе (1..MAX_LIMIT).
         cnt = tk.Frame(row, bg=T["BG_CARD"])
@@ -496,6 +482,216 @@ class DotaApp:
         self.result_area.config(yscrollcommand=sb.set)
         self._setup_tags()
         self._show_welcome()
+
+    # ── Вкладка драфта ────────────────────────────────────────────────────────
+
+    def _build_draft_page(self):
+        T, tr = self.T, self.tr
+        page = tk.Frame(self._content, bg=T["BG_DARK"])
+        self._draft_page = page
+        page.columnconfigure(0, weight=1)
+        page.rowconfigure(2, weight=1)
+
+        card = tk.Frame(page, bg=T["BG_CARD"],
+                        highlightbackground=T["BORDER"], highlightthickness=1)
+        card.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        inner = tk.Frame(card, bg=T["BG_CARD"])
+        inner.pack(fill=tk.X, padx=14, pady=12)
+        tk.Label(inner, text=tr["draft_label"], font=self.font_label,
+                 fg=T["TEXT_DIM"], bg=T["BG_CARD"]).pack(anchor="w", pady=(0, 4))
+
+        row = tk.Frame(inner, bg=T["BG_CARD"])
+        row.pack(fill=tk.X)
+        ef = tk.Frame(row, bg=T["ACCENT"], padx=1, pady=1)
+        ef.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
+        ei = tk.Frame(ef, bg=T["BG_PANEL"])
+        ei.pack(fill=tk.BOTH)
+        self.draft_entry = tk.Entry(ei, font=self.font_entry,
+                                    bg=T["BG_PANEL"], fg=T["TEXT_PRIMARY"],
+                                    insertbackground=T["ACCENT"],
+                                    relief="flat", bd=6, highlightthickness=0)
+        self.draft_entry.pack(fill=tk.X)
+        self._draft_suggest = HeroSuggestions(
+            page, self.draft_entry, T, self.font_entry, on_accept=self._add_enemy)
+        self.draft_entry.bind("<FocusOut>", lambda e: self._draft_suggest.hide_later())
+
+        self._draft_browse_btn = tk.Button(
+            row, text=tr["btn_heroes"], font=("Courier New", 11, "bold"),
+            bg=T["BG_PANEL"], fg=T["ACCENT3"],
+            activebackground=T["GLOW"], activeforeground=T["ACCENT"],
+            relief="flat", bd=0, padx=12, pady=8, cursor="hand2",
+            highlightbackground=T["BORDER"], highlightthickness=1,
+            command=lambda: HeroBrowserModal(self.root, T, tr, on_select=self._add_enemy))
+        self._draft_browse_btn.pack(side=tk.LEFT, padx=(0, 10))
+
+        self._draft_btn = tk.Button(row, text=tr["draft_btn"], font=self.font_btn,
+                                    bg=T["ACCENT"], fg=T["BG_DARK"],
+                                    activebackground=T["ACCENT2"], activeforeground=T["BG_DARK"],
+                                    relief="flat", bd=0, padx=18, pady=8,
+                                    cursor="hand2", command=self.start_draft)
+        self._draft_btn.pack(side=tk.LEFT)
+
+        # Выбранные враги — по «фишке» на каждого, с крестиком
+        self._draft_chips = tk.Frame(inner, bg=T["BG_CARD"])
+        self._draft_chips.pack(fill=tk.X, pady=(10, 0))
+
+        bar = tk.Frame(page, bg=T["BG_DARK"])
+        bar.grid(row=1, column=0, sticky="ew", pady=(0, 6))
+        self._draft_status = tk.Label(bar, text=tr["draft_hint"], font=self.font_status,
+                                      fg=T["TEXT_DIM"], bg=T["BG_DARK"])
+        self._draft_status.pack(side=tk.LEFT)
+
+        wrap = tk.Frame(page, bg=T["BG_DARK"])
+        wrap.grid(row=2, column=0, sticky="nsew", pady=(0, 8))
+        wrap.columnconfigure(1, weight=1)
+        wrap.rowconfigure(0, weight=1)
+        tk.Frame(wrap, bg=T["ACCENT"], width=2).grid(row=0, column=0, sticky="ns")
+        result_card = tk.Frame(wrap, bg=T["BG_CARD"],
+                               highlightbackground=T["BORDER"], highlightthickness=1)
+        result_card.grid(row=0, column=1, sticky="nsew")
+        result_card.columnconfigure(0, weight=1)
+        result_card.rowconfigure(0, weight=1)
+        tf = tk.Frame(result_card, bg=T["BG_CARD"])
+        tf.grid(row=0, column=0, sticky="nsew")
+        tf.columnconfigure(0, weight=1)
+        tf.rowconfigure(0, weight=1)
+        self.draft_area = tk.Text(tf, wrap=tk.WORD, font=self.font_result,
+                                  bg=T["BG_CARD"], fg=T["TEXT_PRIMARY"],
+                                  insertbackground=T["ACCENT"], selectbackground=T["GLOW"],
+                                  relief="flat", bd=0, padx=14, pady=10, spacing2=3,
+                                  state=tk.DISABLED)
+        self.draft_area.grid(row=0, column=0, sticky="nsew")
+        sb = ttk.Scrollbar(tf, orient="vertical", style="Dark.Vertical.TScrollbar",
+                           command=self.draft_area.yview)
+        sb.grid(row=0, column=1, sticky="ns")
+        self.draft_area.config(yscrollcommand=sb.set)
+        for tag, colour in (("good", T["ACCENT"]), ("bad", T["ACCENT2"]),
+                            ("divider", T["TEXT_MUTED"]), ("hero", T["TEXT_PRIMARY"]),
+                            ("dim", T["TEXT_DIM"]), ("error", T["ACCENT2"])):
+            self.draft_area.tag_config(tag, foreground=colour)
+        self.draft_area.tag_config("good", foreground=T["ACCENT"],
+                                   font=("Courier New", 12, "bold"))
+        self.draft_area.tag_config("bad", foreground=T["ACCENT2"],
+                                   font=("Courier New", 12, "bold"))
+
+        self._render_chips()
+
+    def _render_chips(self):
+        """Перерисовать список выбранных врагов."""
+        T, tr = self.T, self.tr
+        for w in self._draft_chips.winfo_children():
+            w.destroy()
+        if not self._enemies:
+            tk.Label(self._draft_chips, text=tr["draft_empty"], font=("Courier New", 9),
+                     fg=T["TEXT_MUTED"], bg=T["BG_CARD"]).pack(side=tk.LEFT)
+            return
+        for hero in self._enemies:
+            chip = tk.Frame(self._draft_chips, bg=T["BG_PANEL"],
+                            highlightbackground=T["BORDER"], highlightthickness=1)
+            chip.pack(side=tk.LEFT, padx=(0, 6))
+            tk.Label(chip, text=hero, font=("Courier New", 10),
+                     fg=T["ACCENT3"], bg=T["BG_PANEL"]).pack(side=tk.LEFT, padx=(8, 4), pady=3)
+            close = tk.Button(chip, text="✕", font=("Courier New", 9, "bold"),
+                              bg=T["BG_PANEL"], fg=T["TEXT_DIM"],
+                              activebackground=T["BG_PANEL"], activeforeground=T["ACCENT2"],
+                              relief="flat", bd=0, cursor="hand2",
+                              command=lambda h=hero: self._remove_enemy(h))
+            close.pack(side=tk.LEFT, padx=(0, 6))
+
+    def _add_enemy(self, hero):
+        """Добавить врага: имя приводится к известному герою, дубли отбрасываются."""
+        matches = suggest(hero, limit=1)
+        name = matches[0] if matches else hero.strip()
+        self.draft_entry.delete(0, tk.END)
+        if not name:
+            return
+        if name in self._enemies:
+            self._draft_status.config(text=self.tr["draft_dup"].format(hero=name),
+                                      fg=self.T["TEXT_DIM"])
+            return
+        if len(self._enemies) >= MAX_ENEMIES:
+            self._draft_status.config(text=self.tr["draft_full"].format(max=MAX_ENEMIES),
+                                      fg=self.T["ACCENT2"])
+            return
+        self._enemies.append(name)
+        self._render_chips()
+        self._draft_status.config(text=self.tr["draft_hint"], fg=self.T["TEXT_DIM"])
+        self._switch_tab("draft")
+
+    def _remove_enemy(self, hero):
+        if hero in self._enemies:
+            self._enemies.remove(hero)
+            self._render_chips()
+
+    def start_draft(self):
+        if not self._enemies:
+            self._draft_status.config(text=self.tr["draft_empty"], fg=self.T["ACCENT2"])
+            return
+        tr = self.tr
+        self._draft_btn.config(state=tk.DISABLED, text=tr["draft_working"])
+        self._draft_status.config(text=tr["status_scanning"], fg=self.T["ACCENT3"])
+        self.draft_area.config(state=tk.NORMAL)
+        self.draft_area.delete(1.0, tk.END)
+        self.draft_area.insert(tk.END, tr["loading_msg"], "dim")
+        self.draft_area.config(state=tk.DISABLED)
+        threading.Thread(target=self._bg_draft, args=(list(self._enemies),),
+                         daemon=True).start()
+
+    def _bg_draft(self, enemies):
+        """Страница на каждого врага, затем сложение матчапов."""
+        # Одна сессия на весь подбор: на серии запросов с новым соединением
+        # каждый раз Cloudflare отбивает часть из них.
+        scraper = create_scraper()
+        reports, failed = {}, []
+        for hero in enemies:
+            try:
+                reports[hero] = fetch_counters(hero, scraper=scraper, limit=self._limit)
+            except DotabuffError as exc:
+                failed.append((hero, exc))
+            except Exception as exc:
+                failed.append((hero, FetchError(str(exc))))
+        result = analyse(reports, limit=self._limit) if reports else None
+        self.root.after(0, self._apply_draft, result, failed)
+
+    def _apply_draft(self, result, failed):
+        tr, T = self.tr, self.T
+        area = self.draft_area
+        area.config(state=tk.NORMAL)
+        area.delete(1.0, tk.END)
+        self.hero_images = []
+        scraper = create_scraper()
+
+        for hero, exc in failed:
+            area.insert(tk.END, tr["draft_failed"].format(hero=hero, detail=exc), "error")
+        if result and result.skipped:
+            area.insert(tk.END, tr["draft_skipped"].format(
+                heroes=", ".join(result.skipped)), "error")
+
+        if not result or not result.picks:
+            if not failed:
+                area.insert(tk.END, tr["draft_nothing"], "error")
+            area.config(state=tk.DISABLED)
+            self._draft_status.config(text=tr["status_failed"], fg=T["ACCENT2"])
+            self._draft_btn.config(state=tk.NORMAL, text=tr["draft_btn"])
+            return
+
+        rule = "  " + "─" * 46 + "\n"
+        against = ", ".join(result.enemies)
+        for tag, title, rows in (("good", tr["draft_best"], result.picks),
+                                 ("bad", tr["draft_worst"], result.avoid)):
+            area.insert(tk.END, rule, "divider")
+            area.insert(tk.END, f"  {title}  ◈  {against}\n", tag)
+            area.insert(tk.END, rule, "divider")
+            for pick in rows:
+                self._insert_icon(scraper, pick.icon_url, area)
+                area.insert(tk.END, f" {pick.hero:<21}", "hero")
+                area.insert(tk.END, "  %+.2f%%\n" % pick.total, tag)
+            area.insert(tk.END, "\n", "divider")
+        area.insert(tk.END, tr["draft_footnote"], "dim")
+
+        area.config(state=tk.DISABLED)
+        self._draft_status.config(text=tr["status_complete"], fg=T["ACCENT"])
+        self._draft_btn.config(state=tk.NORMAL, text=tr["draft_btn"])
 
     # ── Settings page ─────────────────────────────────────────────────────────
 
@@ -835,9 +1031,7 @@ class DotaApp:
     def _on_entry_blur(self, event):
         if not self.hero_entry.get():
             self._show_placeholder()
-        # С задержкой: щелчок по подсказке сначала уводит фокус из поля, и без
-        # паузы список успел бы исчезнуть до того, как щелчок до него дойдёт.
-        self.root.after(200, self._hide_suggestions)
+        self._suggest.hide_later()
 
     # ── Scanline animation ────────────────────────────────────────────────────
 
@@ -899,97 +1093,17 @@ class DotaApp:
         else:
             self.hero_entry.delete(0, tk.END)
         self.hero_entry.insert(0, hero_name)
-        self._hide_suggestions()
+        self._suggest.hide()
         self._switch_tab("search")
         self.start_search()
 
-    # ── Подсказки при вводе ───────────────────────────────────────────────────
-
-    def _on_entry_key(self, event):
-        """Обновить подсказки. Управляющие клавиши разбираются отдельно."""
-        if event.keysym in ("Up", "Down", "Return", "Escape", "Tab"):
-            return
-        if self._placeholder_active:
-            self._hide_suggestions()
-            return
-        self._update_suggestions()
-
-    def _update_suggestions(self):
-        matches = suggest(self.hero_entry.get())
-        # Точное совпадание — подсказывать уже нечего
-        if not matches or [m.lower() for m in matches] == [self.hero_entry.get().strip().lower()]:
-            self._hide_suggestions()
-            return
-        box = self._suggest_box
-        box.delete(0, tk.END)
-        for hero in matches:
-            box.insert(tk.END, "  " + hero)
-        box.config(height=len(matches))
-        entry, page = self.hero_entry, self._search_page
-        box.place(x=entry.winfo_rootx() - page.winfo_rootx(),
-                  y=entry.winfo_rooty() - page.winfo_rooty() + entry.winfo_height() + 2,
-                  width=entry.winfo_width())
-        box.lift()
-        self._suggest_visible = True
-
-    def _hide_suggestions(self):
-        if not getattr(self, "_suggest_visible", False):
-            return
-        try:
-            self._suggest_box.place_forget()
-        except tk.TclError:
-            pass  # интерфейс пересобрали, прежнего списка уже нет
-        self._suggest_visible = False
-
-    def _suggest_move(self, step):
-        """Перебор подсказок стрелками; первое нажатие вниз открывает список."""
-        if not self._suggest_visible:
-            if step > 0 and not self._placeholder_active:
-                self._update_suggestions()
-            return "break"
-        box = self._suggest_box
-        current = box.curselection()
-        index = (current[0] + step) if current else (0 if step > 0 else box.size() - 1)
-        index = max(0, min(index, box.size() - 1))
-        box.selection_clear(0, tk.END)
-        box.selection_set(index)
-        box.activate(index)
-        box.see(index)
-        return "break"
-
-    def _suggest_move_down(self, event):
-        return self._suggest_move(1)
-
-    def _suggest_move_up(self, event):
-        return self._suggest_move(-1)
-
-    def _accept_suggestion(self, index=None):
-        """Подставить выбранного героя в поле и сразу искать."""
-        box = self._suggest_box
-        if index is None:
-            current = box.curselection()
-            if not current:
-                return False
-            index = current[0]
-        hero = box.get(index).strip()
+    def _search_hero(self, hero):
+        """Подставить героя в поле и искать: подсказка, Enter или список героев."""
         self._placeholder_active = False
         self.hero_entry.config(fg=self.T["TEXT_PRIMARY"])
         self.hero_entry.delete(0, tk.END)
         self.hero_entry.insert(0, hero)
-        self._hide_suggestions()
         self.start_search()
-        return True
-
-    def _on_suggest_click(self, event):
-        self._accept_suggestion(self._suggest_box.nearest(event.y))
-        return "break"
-
-    def _on_entry_return(self, event):
-        """Enter: взять выделенную подсказку, иначе искать что набрано."""
-        if not (self._suggest_visible and self._accept_suggestion()):
-            self._hide_suggestions()
-            self.start_search()
-        return "break"
 
     # ── Поиск ─────────────────────────────────────────────────────────────────
 
@@ -1063,8 +1177,12 @@ class DotaApp:
 
         self._set_status(tr["status_complete"], self.T["ACCENT"])
 
-    def _insert_icon(self, scraper, url):
-        """Иконка героя перед именем; если не загрузилась — просто отступ."""
+    def _insert_icon(self, scraper, url, area=None):
+        """Иконка героя перед именем; если не загрузилась — просто отступ.
+
+        area задаётся, потому что вывод есть и у поиска, и у драфта.
+        """
+        area = area or self.result_area
         if url:
             try:
                 data = scraper.get(url, timeout=5).content
@@ -1072,9 +1190,9 @@ class DotaApp:
                     (26, 15), Image.Resampling.LANCZOS)
                 photo = ImageTk.PhotoImage(img)
                 self.hero_images.append(photo)
-                self.result_area.insert(tk.END, "  ")
-                self.result_area.image_create(tk.END, image=photo)
+                area.insert(tk.END, "  ")
+                area.image_create(tk.END, image=photo)
                 return
             except Exception:
                 pass
-        self.result_area.insert(tk.END, "    ")
+        area.insert(tk.END, "    ")

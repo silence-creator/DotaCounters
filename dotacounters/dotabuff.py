@@ -15,6 +15,7 @@
 """
 
 import re
+import time
 from dataclasses import dataclass, field
 
 from bs4 import BeautifulSoup
@@ -35,6 +36,10 @@ _MATCHUPS_RE = re.compile(r"\bmatchups\b", re.I)
 DEFAULT_LIMIT = 5
 #: Верхняя граница выбора в интерфейсе.
 MAX_LIMIT = 12
+#: Паузы перед повторами запроса, отбитого с 403. Cloudflare отвечает так
+#: примерно на четверть холодных запросов; на замере из 12 страниц одной
+#: попытки хватило 8 раз, двух — 10, трёх — 11.
+RETRY_PAUSES = (0.6, 1.5)
 
 
 # ── Ошибки ────────────────────────────────────────────────────────────────────
@@ -65,6 +70,9 @@ class Matchup:
     win_rate: str
     advantage: str | None = None
     icon_url: str | None = None
+    #: Преимущество числом из data-value: насколько хуже играет герой страницы
+    #: против этого соперника. Положительное — соперник его контрит.
+    advantage_value: float | None = None
 
 
 @dataclass
@@ -135,6 +143,14 @@ def _icon_url(row) -> str | None:
     return BASE_URL + src if src.startswith("/") else src
 
 
+def _to_float(value) -> float | None:
+    """«3.2809» -> 3.2809; «—», пусто и мусор -> None."""
+    try:
+        return float(str(value).replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+
+
 def _cell_text(cell) -> str:
     """Предпочитаем data-value: там значение без форматирования."""
     return (cell.get("data-value") or cell.get_text(strip=True) or "").strip()
@@ -164,12 +180,14 @@ def _parse_rows(table, idx: dict) -> list:
                 "колонки Dotabuff сместились" % win_rate[:40]
             )
 
-        advantage = None
+        advantage, advantage_value = None, None
         if "advantage" in idx and len(cells) > idx["advantage"]:
-            advantage = cells[idx["advantage"]].get_text(strip=True) or None
+            cell = cells[idx["advantage"]]
+            advantage = cell.get_text(strip=True) or None
+            advantage_value = _to_float(cell.get("data-value"))
 
-        out.append(Matchup(hero=hero, win_rate=win_rate,
-                           advantage=advantage, icon_url=_icon_url(row)))
+        out.append(Matchup(hero=hero, win_rate=win_rate, advantage=advantage,
+                           icon_url=_icon_url(row), advantage_value=advantage_value))
     return out
 
 
@@ -258,8 +276,16 @@ def fetch_counters(hero_name: str, scraper=None,
     """Скачать и разобрать страницу контрпиков героя."""
     slug = hero_slug(hero_name)
     scraper = scraper or create_scraper()
+    url = "%s/heroes/%s/counters" % (BASE_URL, slug)
     try:
-        resp = scraper.get("%s/heroes/%s/counters" % (BASE_URL, slug), timeout=10)
+        resp = scraper.get(url, timeout=10)
+        for pause in RETRY_PAUSES:
+            # Cloudflare отбивает часть запросов случайно; повтор тем же
+            # соединением обычно проходит.
+            if resp.status_code != 403:
+                break
+            time.sleep(pause)
+            resp = scraper.get(url, timeout=10)
     except Exception as exc:
         raise FetchError(str(exc)) from exc
 

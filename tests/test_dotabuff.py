@@ -14,6 +14,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from dotacounters import dotabuff  # noqa: E402
 from dotacounters.dotabuff import (  # noqa: E402
     MAX_LIMIT, CounterReport, ParseError, hero_slug, parse_counters,
 )
@@ -101,6 +102,46 @@ class FailsLoudlyTest(unittest.TestCase):
         with self.assertRaises(ParseError) as ctx:
             parse_counters(html)
         self.assertIn("винрейт", str(ctx.exception))
+
+
+class RetryTest(unittest.TestCase):
+    """Cloudflare изредка отбивает первый запрос новой сессии."""
+
+    class Scraper:
+        def __init__(self, codes, body):
+            self.codes, self.body, self.calls = list(codes), body, 0
+
+        def get(self, url, **kwargs):
+            self.calls += 1
+            code = self.codes.pop(0) if self.codes else 200
+            return type("R", (), {"status_code": code, "text": self.body})()
+
+    def setUp(self):
+        self._pauses = dotabuff.RETRY_PAUSES
+        dotabuff.RETRY_PAUSES = (0, 0)    # тест не должен ждать
+        self.addCleanup(setattr, dotabuff, "RETRY_PAUSES", self._pauses)
+
+    def test_403_is_retried(self):
+        scraper = self.Scraper([403, 200], load_fixture())
+        report = dotabuff.fetch_counters("Drow Ranger", scraper=scraper)
+        self.assertEqual(scraper.calls, 2)
+        self.assertEqual(report.countered_by[0].hero, "Mars")
+
+    def test_retries_twice_before_giving_up(self):
+        scraper = self.Scraper([403, 403, 200], load_fixture())
+        dotabuff.fetch_counters("Drow Ranger", scraper=scraper)
+        self.assertEqual(scraper.calls, 3)
+
+    def test_gives_up_after_the_last_retry(self):
+        scraper = self.Scraper([403, 403, 403], "")
+        with self.assertRaises(dotabuff.FetchError):
+            dotabuff.fetch_counters("Drow Ranger", scraper=scraper)
+        self.assertEqual(scraper.calls, 3, "всего три попытки")
+
+    def test_success_is_not_retried(self):
+        scraper = self.Scraper([200], load_fixture())
+        dotabuff.fetch_counters("Drow Ranger", scraper=scraper)
+        self.assertEqual(scraper.calls, 1)
 
 
 class LimitTest(unittest.TestCase):

@@ -42,6 +42,21 @@ I18N = {
                              "      {detail}\n",
         "warn_degraded":     "  ⚠  Section headings were not recognised; sections\n"
                              "      identified by position. Data may be mislabelled.\n\n",
+        # Драфт
+        "tab_draft":         "DRAFT",
+        "draft_label":       "ENEMY HEROES",
+        "draft_btn":         "⟩  SUGGEST",
+        "draft_working":     "  WORKING…",
+        "draft_hint":        "Add up to 5 enemy heroes, then press SUGGEST",
+        "draft_empty":       "No enemy heroes added yet",
+        "draft_dup":         "{hero} is already on the list",
+        "draft_full":        "Up to {max} enemy heroes",
+        "draft_best":        "BEST PICKS AGAINST",
+        "draft_worst":       "WORST PICKS AGAINST",
+        "draft_nothing":     "\n  ✕  Nothing to suggest: no full matchup table for these heroes.\n",
+        "draft_failed":      "  ✕  {hero}: {detail}\n",
+        "draft_skipped":     "  ⚠  No full matchup table for: {heroes}. They were left out.\n",
+        "draft_footnote":    "\n  Numbers add up each hero's advantage over the enemies, from Dotabuff.\n",
         # Hero browser
         "hb_title":          "HERO BROWSER",
         "hb_sorted":         "heroes  ·  sorted A → Z",
@@ -101,7 +116,11 @@ I18N = {
         "upd_subtitle":      "Program update history",
         # История изменений: номера в записях — прошлое, поэтому зашиты явно.
         # Верхняя запись обязана совпадать с APP_VERSION — это проверяет тест.
-        "upd_text":          "v1.3\n"
+        "upd_text":          "v1.4\n"
+                             "New Draft tab: add up to five enemy heroes and the app sums their matchups to show which heroes to pick against that line-up, and which to avoid.\n"
+                             "Counter searches are steadier: Dotabuff turned away part of the requests, so a request is now retried and a draft runs on a single connection.\n"
+                             "\n"
+                             "v1.3\n"
                              "The app checks GitHub for a new version once a day and shows a bar when one is out; there is also a Check for updates button on this tab.\n"
                              "Update downloads the release, verifies its checksum, replaces the program and restarts it. Where the folder is read-only, the bar links to the release page instead.\n"
                              "\n"
@@ -156,6 +175,21 @@ I18N = {
                              "      {detail}\n",
         "warn_degraded":     "  ⚠  Заголовки разделов не опознаны, разделы определены\n"
                              "      по позиции. Подписи могут быть перепутаны.\n\n",
+        # Драфт
+        "tab_draft":         "ДРАФТ",
+        "draft_label":       "ГЕРОИ ПРОТИВНИКА",
+        "draft_btn":         "⟩  ПОДОБРАТЬ",
+        "draft_working":     "  ПОДБОР…",
+        "draft_hint":        "Добавьте до 5 героев противника и нажмите ПОДОБРАТЬ",
+        "draft_empty":       "Герои противника пока не добавлены",
+        "draft_dup":         "{hero} уже в списке",
+        "draft_full":        "Не больше {max} героев противника",
+        "draft_best":        "ЛУЧШИЙ ВЫБОР ПРОТИВ",
+        "draft_worst":       "ХУДШИЙ ВЫБОР ПРОТИВ",
+        "draft_nothing":     "\n  ✕  Подбирать не из чего: полной таблицы матчапов у этих героев нет.\n",
+        "draft_failed":      "  ✕  {hero}: {detail}\n",
+        "draft_skipped":     "  ⚠  Нет полной таблицы матчапов: {heroes}. Они не учтены.\n",
+        "draft_footnote":    "\n  Число — сумма преимуществ героя над противниками по данным Dotabuff.\n",
         # Hero browser
         "hb_title":          "СПИСОК ГЕРОЕВ",
         "hb_sorted":         "героев  ·  по алфавиту",
@@ -213,7 +247,11 @@ I18N = {
         "upd_error":         "Не удалось обновить: {detail}",
         "upd_title":         "ОБНОВЛЕНИЯ",
         "upd_subtitle":      "История обновлений программы",
-        "upd_text":          "v1.3\n"
+        "upd_text":          "v1.4\n"
+                             "Новая вкладка «Драфт»: добавьте до пяти героев противника, и программа сложит их матчапы и покажет, кого брать против такого состава, а кого не стоит.\n"
+                             "Поиск контрпиков стал надёжнее: Dotabuff отбивал часть запросов, теперь запрос повторяется, а подбор в драфте идёт одним соединением.\n"
+                             "\n"
+                             "v1.3\n"
                              "Программа раз в сутки проверяет, не вышла ли новая версия, и показывает плашку. На этой вкладке есть и кнопка «Проверить обновления».\n"
                              "Кнопка «Обновить» скачивает сборку, сверяет контрольную сумму, заменяет программу и перезапускает её. Если папка защищена от записи, останется ссылка на страницу релиза.\n"
                              "\n"
