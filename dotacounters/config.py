@@ -32,6 +32,18 @@ def load_config():
         return dict(DEFAULTS)
 
 
+def update_config(**values):
+    """Дописать значения, не трогая остальные.
+
+    save_config переписывает файл целиком, поэтому служебные записи вроде даты
+    последней проверки обновлений без слияния терялись бы при смене темы.
+    """
+    cfg = load_config()
+    cfg.update(values)
+    save_config(cfg)
+    return cfg
+
+
 def save_config(cfg: dict):
     try:
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:

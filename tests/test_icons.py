@@ -99,8 +99,8 @@ class RasterizeSvgTest(unittest.TestCase):
         rel = self.RING.replace(
             "M0 0 L100 0 L100 100 L0 100 Z M30 30 L70 30 L70 70 L30 70 Z",
             "m0 0 h100 v100 h-100 z M30 30 l40 0 l0 40 l-40 0 z")
-        self.assertEqual(list(rasterize_svg(rel, 50).getdata()),
-                         list(rasterize_svg(self.RING, 50).getdata()))
+        self.assertEqual(rasterize_svg(rel, 50).tobytes(),
+                         rasterize_svg(self.RING, 50).tobytes())
 
     def test_cubic_curve(self):
         svg = ('<svg viewBox="0 0 100 100"><path d="M0 100 C0 0 100 0 100 100 Z" '
@@ -138,8 +138,8 @@ class RasterizeSvgTest(unittest.TestCase):
         img = Image.new("RGBA", (96, 96), (0, 0, 0, 0))
         for y in range(96):
             img.putpixel((48, y), (255, 255, 255, 255))
-        before = sum(1 for p in img.getchannel("A").getdata() if p)
-        after = sum(1 for p in thicken(img).getchannel("A").getdata() if p)
+        before = sum(1 for p in img.getchannel("A").tobytes() if p)
+        after = sum(1 for p in thicken(img).getchannel("A").tobytes() if p)
         self.assertGreater(after, before * 5)
 
 

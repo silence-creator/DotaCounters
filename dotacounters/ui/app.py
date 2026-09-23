@@ -1,14 +1,19 @@
 """Главное окно приложения: вкладки поиска, настроек и обновлений."""
 
 import io
+import os
+import subprocess
 import threading
 import tkinter as tk
+import webbrowser
+from datetime import date
 from tkinter import font as tkfont
 from tkinter import ttk
 
 from PIL import Image, ImageTk
 
-from ..config import load_config, save_config
+from .. import updates
+from ..config import load_config, update_config
 from ..dotabuff import (
     DEFAULT_LIMIT, MAX_LIMIT, DotabuffError, FetchError, HeroNotFound,
     ParseError, fetch_counters,
@@ -18,6 +23,7 @@ from ..i18n import I18N
 from ..net import create_scraper
 from ..patches import fetch_current_patch
 from ..themes import THEMES
+from ..version import APP_VERSION
 from .hero_browser import HeroBrowserModal
 from .patch_notes import PatchNotesModal
 from .winapi import set_title_bar_color
@@ -44,6 +50,10 @@ class DotaApp:
         self._placeholder_active = False
         self._patch_version    = "…"
         self._active_tab       = "search"   # "search" | "settings" | "updates"
+        self._update           = None       # dotacounters.updates.Update, когда есть
+        self._update_btn       = None
+        self._update_status    = None
+        updates.cleanup_old()               # хвост от прошлого обновления
 
         self._setup_fonts()
         self._apply_theme_styles()
@@ -59,6 +69,7 @@ class DotaApp:
             pass
 
         threading.Thread(target=self._load_patch, daemon=True).start()
+        self._start_update_check()
 
     # ── Theme & styles ────────────────────────────────────────────────────────
 
@@ -106,15 +117,16 @@ class DotaApp:
         outer = tk.Frame(self.root, bg=T["BG_DARK"])
         outer.grid(row=0, column=0, sticky="nsew", padx=16, pady=12)
         outer.columnconfigure(0, weight=1)
-        outer.rowconfigure(3, weight=1)
+        outer.rowconfigure(4, weight=1)
 
         self._build_header(outer)
         self._build_tab_bar(outer)
-        tk.Frame(outer, bg=T["BORDER"], height=1).grid(row=2, column=0, sticky="ew", pady=(0, 10))
+        self._build_update_banner(outer)
+        tk.Frame(outer, bg=T["BORDER"], height=1).grid(row=3, column=0, sticky="ew", pady=(0, 10))
 
         # Content frame — swapped by tabs
         self._content = tk.Frame(outer, bg=T["BG_DARK"])
-        self._content.grid(row=3, column=0, sticky="nsew")
+        self._content.grid(row=4, column=0, sticky="nsew")
         self._content.columnconfigure(0, weight=1)
         self._content.rowconfigure(0, weight=1)
 
@@ -124,6 +136,124 @@ class DotaApp:
         self._build_footer(outer)
 
         self._switch_tab(self._active_tab, rebuild=False)
+
+    # ── Обновления программы ──────────────────────────────────────────────────
+
+    def _build_update_banner(self, parent):
+        """Полоса под вкладками. Пустая и скрытая, пока обновления нет."""
+        T = self.T
+        self._banner = tk.Frame(parent, bg=T["BG_PANEL"],
+                                highlightbackground=T["ACCENT3"], highlightthickness=1)
+        self._banner.grid(row=2, column=0, sticky="ew", pady=(0, 8))
+        self._banner.grid_remove()
+        self._banner_label = tk.Label(self._banner, text="", font=("Courier New", 10, "bold"),
+                                      fg=T["ACCENT3"], bg=T["BG_PANEL"])
+        self._banner_label.pack(side=tk.LEFT, padx=12, pady=7)
+        self._banner_buttons = tk.Frame(self._banner, bg=T["BG_PANEL"])
+        self._banner_buttons.pack(side=tk.RIGHT, padx=8)
+        if getattr(self, "_update", None):
+            self._show_update(self._update)
+
+    def _banner_button(self, text, command, accent=False):
+        T = self.T
+        btn = tk.Button(self._banner_buttons, text=text, font=("Courier New", 9, "bold"),
+                        bg=T["ACCENT"] if accent else T["BG_PANEL"],
+                        fg=T["BG_DARK"] if accent else T["ACCENT3"],
+                        activebackground=T["ACCENT2"] if accent else T["GLOW"],
+                        activeforeground=T["BG_DARK"] if accent else T["ACCENT"],
+                        relief="flat", bd=0, padx=12, pady=5, cursor="hand2",
+                        command=command)
+        btn.pack(side=tk.LEFT, padx=4)
+        return btn
+
+    def _start_update_check(self, manual=False):
+        """Проверка раз в сутки; по кнопке — всегда."""
+        if not manual:
+            today = date.today().isoformat()
+            if load_config().get("last_update_check") == today:
+                return
+            update_config(last_update_check=today)
+        if manual:
+            self._set_update_status(self.tr["upd_checking"])
+        threading.Thread(target=self._check_updates, args=(manual,), daemon=True).start()
+
+    def _check_updates(self, manual):
+        found = updates.check()
+        self.root.after(0, self._apply_update_check, found, manual)
+
+    def _apply_update_check(self, found, manual):
+        self._update = found
+        if found:
+            self._show_update(found)
+            self._set_update_status(self.tr["upd_available"].format(version=found.version))
+        elif manual:
+            self._set_update_status(self.tr["upd_uptodate"].format(version=APP_VERSION))
+
+    def _set_update_status(self, text):
+        label = getattr(self, "_update_status", None)
+        if label is not None:
+            try:
+                label.config(text=text)
+            except tk.TclError:
+                pass  # вкладку пересобрали
+
+    def _show_update(self, update):
+        self._banner_label.config(text=self.tr["upd_available"].format(version=update.version),
+                                  fg=self.T["ACCENT3"])
+        for w in self._banner_buttons.winfo_children():
+            w.destroy()
+        if updates.can_install():
+            self._update_btn = self._banner_button(self.tr["upd_install_btn"],
+                                                   self._install_update, accent=True)
+        else:
+            self._update_btn = None
+        self._banner_button(self.tr["upd_page_btn"], lambda: webbrowser.open(update.page))
+        self._banner_button("✕", self._hide_update)
+        self._banner.grid()
+
+    def _hide_update(self):
+        self._banner.grid_remove()
+
+    def _install_update(self):
+        """Скачать, сверить сумму, заменить файл и перезапуститься."""
+        if self._update_btn:
+            self._update_btn.config(state=tk.DISABLED)
+        threading.Thread(target=self._run_install, daemon=True).start()
+
+    def _run_install(self):
+        update = self._update
+        exe = updates.current_exe()
+        target = exe + ".new"
+        try:
+            def progress(received, total):
+                if total:
+                    self.root.after(0, self._banner_label.config, {
+                        "text": self.tr["upd_downloading"].format(
+                            percent=min(100, int(100 * received / total)))})
+            updates.download(update, target, progress=progress)
+            self.root.after(0, self._banner_label.config,
+                            {"text": self.tr["upd_installing"]})
+            updates.install(target, exe)
+        except Exception as exc:
+            try:
+                os.unlink(target)
+            except OSError:
+                pass
+            self.root.after(0, self._update_failed, exc)
+            return
+        self.root.after(0, self._restart_after_update, exe)
+
+    def _update_failed(self, exc):
+        self._banner_label.config(text=self.tr["upd_error"].format(detail=exc),
+                                  fg=self.T["ACCENT2"])
+        if self._update_btn:
+            self._update_btn.config(state=tk.NORMAL)
+
+    def _restart_after_update(self, exe):
+        self._banner_label.config(text=self.tr["upd_restart"])
+        self.root.update_idletasks()
+        subprocess.Popen([exe], cwd=os.path.dirname(exe), close_fds=True)
+        self.root.destroy()
 
     def _on_wheel(self, event):
         """Прокрутить полотно, внутри которого оказался курсор.
@@ -496,6 +626,20 @@ class DotaApp:
         tk.Label(lbl, text=tr["upd_subtitle"], font=("Courier New", 9),
                  fg=T["TEXT_DIM"], bg=T["BG_DARK"]).pack(anchor="w")
 
+        # Проверка обновлений вручную
+        check = tk.Frame(hdr, bg=T["BG_DARK"])
+        check.pack(side=tk.RIGHT)
+        btn = tk.Button(check, text=tr["upd_check_btn"], font=("Courier New", 9, "bold"),
+                        bg=T["BG_PANEL"], fg=T["ACCENT3"],
+                        activebackground=T["GLOW"], activeforeground=T["ACCENT"],
+                        relief="flat", bd=0, padx=12, pady=6, cursor="hand2",
+                        highlightbackground=T["BORDER"], highlightthickness=1,
+                        command=lambda: self._start_update_check(manual=True))
+        btn.pack(anchor="e")
+        self._update_status = tk.Label(check, text="", font=("Courier New", 8),
+                                       fg=T["TEXT_DIM"], bg=T["BG_DARK"])
+        self._update_status.pack(anchor="e", pady=(4, 0))
+
         # Updates card
         card = tk.Frame(inner, bg=T["BG_CARD"],
                         highlightbackground=T["BORDER"], highlightthickness=1)
@@ -630,8 +774,7 @@ class DotaApp:
         self._save_prefs()
 
     def _save_prefs(self):
-        save_config({"theme": self._theme_key, "lang": self._lang,
-                     "limit": self._limit})
+        update_config(theme=self._theme_key, lang=self._lang, limit=self._limit)
 
     def _rebuild(self):
         self._apply_theme_styles()
@@ -643,7 +786,7 @@ class DotaApp:
     def _build_footer(self, parent):
         T, tr = self.T, self.tr
         ft = tk.Frame(parent, bg=T["BG_DARK"])
-        ft.grid(row=4, column=0, sticky="ew", pady=(6, 0))
+        ft.grid(row=5, column=0, sticky="ew", pady=(6, 0))
         tk.Label(ft, text=tr["footer_hint"],
                  font=("Courier New", 8), fg=T["TEXT_MUTED"], bg=T["BG_DARK"]).pack(side=tk.LEFT)
 

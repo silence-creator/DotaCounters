@@ -86,11 +86,26 @@ I18N = {
         "set_built_val":     "Python · tkinter · curl_cffi · BeautifulSoup",
         "set_desc":          "A lightweight desktop tool for Dota 2 counter-pick analysis.\nParses live data from Dotabuff and displays hero matchup statistics\nfor the current patch.",
         # Updates
+        # Обновления программы
+        "upd_check_btn":     "Check for updates",
+        "upd_checking":      "Checking…",
+        "upd_uptodate":      "Version {version} is the latest",
+        "upd_available":     "Version {version} is available",
+        "upd_install_btn":   "Update",
+        "upd_page_btn":      "Release page",
+        "upd_downloading":   "Downloading… {percent}%",
+        "upd_installing":    "Installing…",
+        "upd_restart":       "Restarting…",
+        "upd_error":         "Update failed: {detail}",
         "upd_title":         "UPDATES",
         "upd_subtitle":      "Program update history",
         # История изменений: номера в записях — прошлое, поэтому зашиты явно.
         # Верхняя запись обязана совпадать с APP_VERSION — это проверяет тест.
-        "upd_text":          "v1.2\n"
+        "upd_text":          "v1.3\n"
+                             "The app checks GitHub for a new version once a day and shows a bar when one is out; there is also a Check for updates button on this tab.\n"
+                             "Update downloads the release, verifies its checksum, replaces the program and restarts it. Where the folder is read-only, the bar links to the release page instead.\n"
+                             "\n"
+                             "v1.2\n"
                              "Hero name suggestions appear as you type: arrows to pick one, Enter to search, Escape to dismiss. Hyphens and apostrophes can be skipped, so \"antimage\" finds Anti-Mage.\n"
                              "The mouse wheel now scrolls the hero list, Settings and Updates wherever the cursor sits; it used to work only in the gaps between cards.\n"
                              "\n"
@@ -185,9 +200,24 @@ I18N = {
         "set_built_val":     "Python · tkinter · curl_cffi · BeautifulSoup",
         "set_desc":          "Лёгкий десктопный инструмент для анализа контер-пиков в Dota 2.\nПолучает актуальные данные с Dotabuff и отображает статистику\nматчапов для текущего патча.",
         # Updates
+        # Обновления программы
+        "upd_check_btn":     "Проверить обновления",
+        "upd_checking":      "Проверяем…",
+        "upd_uptodate":      "Версия {version} — последняя",
+        "upd_available":     "Доступна версия {version}",
+        "upd_install_btn":   "Обновить",
+        "upd_page_btn":      "Страница релиза",
+        "upd_downloading":   "Скачивание… {percent}%",
+        "upd_installing":    "Установка…",
+        "upd_restart":       "Перезапуск…",
+        "upd_error":         "Не удалось обновить: {detail}",
         "upd_title":         "ОБНОВЛЕНИЯ",
         "upd_subtitle":      "История обновлений программы",
-        "upd_text":          "v1.2\n"
+        "upd_text":          "v1.3\n"
+                             "Программа раз в сутки проверяет, не вышла ли новая версия, и показывает плашку. На этой вкладке есть и кнопка «Проверить обновления».\n"
+                             "Кнопка «Обновить» скачивает сборку, сверяет контрольную сумму, заменяет программу и перезапускает её. Если папка защищена от записи, останется ссылка на страницу релиза.\n"
+                             "\n"
+                             "v1.2\n"
                              "При вводе имени героя появляются подсказки: стрелки — выбрать, Enter — искать, Escape — закрыть. Дефисы и апострофы можно не набирать: «antimage» находит Anti-Mage.\n"
                              "Колесо мыши теперь прокручивает список героев, настройки и обновления в любом месте окна — раньше оно срабатывало только в промежутках между карточками.\n"
                              "\n"
