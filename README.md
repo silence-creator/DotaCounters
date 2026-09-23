@@ -4,7 +4,7 @@
 
 **Портативный десктопный инструмент для анализа контрпиков в Dota 2.**
 
-![version](https://img.shields.io/badge/version-1.1-00d4ff)
+![version](https://img.shields.io/badge/version-1.1.1-00d4ff)
 ![python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![license](https://img.shields.io/badge/license-MIT-green)
@@ -57,7 +57,7 @@
 
 ## Установка
 
-Скачайте `DotaCounters1.1.exe` из раздела
+Скачайте `DotaCounters1.1.1.exe` из раздела
 [Releases](https://github.com/silence-creator/DotaCounters/releases)
 и запустите. Python и зависимости не нужны — всё внутри.
 
@@ -102,7 +102,7 @@ dotacounters/
     themes.py           цветовые схемы
     i18n.py             строки интерфейса, ru/en
     heroes.py           список героев
-    net.py              общий HTTP-клиент (cloudscraper)
+    net.py              общий HTTP-клиент (curl_cffi)
     dotabuff.py         разбор таблиц контрпиков
     patches.py          патч и патчноуты из datafeed Valve
     icons.py            загрузка иконок, простая отрисовка SVG
@@ -134,7 +134,7 @@ pyinstaller main.spec
 
 | Что | Источник | Механика |
 |-----|----------|----------|
-| Контрпики | `dotabuff.com/heroes/{герой}/counters` | Имя героя превращается в slug, страница забирается через `cloudscraper` (обход Cloudflare). Разделы опознаются по заголовкам над таблицами, колонки — по подписям, а не по номерам |
+| Контрпики | `dotabuff.com/heroes/{герой}/counters` | Имя героя превращается в slug, страница забирается через `curl_cffi` с отпечатком Chrome (обход Cloudflare). Разделы опознаются по заголовкам над таблицами, колонки — по подписям, а не по номерам |
 | Больше 5 строк | та же страница, таблица «Matchups» | Короткие таблицы Dotabuff содержат ровно 5 строк, поэтому при большем значении разделы берутся с начала и конца полной таблицы, отсортированной по преимуществу |
 | Иконки героев | `dotabuff.com` | Догружаются отдельными запросами и вставляются прямо в текстовое поле |
 | Текущий патч | `dota2.com/datafeed/patchnoteslist` | Официальный datafeed Valve; при недоступности — запасной вариант через Dotabuff |

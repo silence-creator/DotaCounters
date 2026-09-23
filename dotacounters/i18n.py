@@ -83,14 +83,17 @@ I18N = {
         "set_patch":         "Patch API",
         "set_patch_val":     "dota2.com/datafeed",
         "set_built":         "Built with",
-        "set_built_val":     "Python · tkinter · cloudscraper · BeautifulSoup",
+        "set_built_val":     "Python · tkinter · curl_cffi · BeautifulSoup",
         "set_desc":          "A lightweight desktop tool for Dota 2 counter-pick analysis.\nParses live data from Dotabuff and displays hero matchup statistics\nfor the current patch.",
         # Updates
         "upd_title":         "UPDATES",
         "upd_subtitle":      "Program update history",
         # История изменений: номера в записях — прошлое, поэтому зашиты явно.
         # Верхняя запись обязана совпадать с APP_VERSION — это проверяет тест.
-        "upd_text":          "v1.1\n"
+        "upd_text":          "v1.1.1\n"
+                             "Counter search works again. Dotabuff's protection started rejecting the previous HTTP client in September 2026 and every search failed with HTTP 403; requests now carry a real browser's TLS fingerprint.\n"
+                             "\n"
+                             "v1.1\n"
                              "Counter search: choose how many counters to show in each section, from 1 to 12.\n"
                              "Patch notes: the window is no longer empty. Notes follow the interface language and show hero, item, ability, stat, talent and Aghanim's icons. Talents, neutral creeps, explanatory notes and New Item badges are no longer missing.\n"
                              "Clearer messages when a hero is not found or Dotabuff changes its page layout.\n"
@@ -175,12 +178,15 @@ I18N = {
         "set_patch":         "API патчей",
         "set_patch_val":     "dota2.com/datafeed",
         "set_built":         "Технологии",
-        "set_built_val":     "Python · tkinter · cloudscraper · BeautifulSoup",
+        "set_built_val":     "Python · tkinter · curl_cffi · BeautifulSoup",
         "set_desc":          "Лёгкий десктопный инструмент для анализа контер-пиков в Dota 2.\nПолучает актуальные данные с Dotabuff и отображает статистику\nматчапов для текущего патча.",
         # Updates
         "upd_title":         "ОБНОВЛЕНИЯ",
         "upd_subtitle":      "История обновлений программы",
-        "upd_text":          "v1.1\n"
+        "upd_text":          "v1.1.1\n"
+                             "Поиск контрпиков снова работает. В сентябре 2026 защита Dotabuff перестала пропускать прежний сетевой клиент, и поиск падал с ошибкой HTTP 403; теперь запросы идут с отпечатком настоящего браузера.\n"
+                             "\n"
+                             "v1.1\n"
                              "Поиск: можно выбрать, сколько контрпиков показывать в каждом разделе, — от 1 до 12.\n"
                              "Изменения патча: окно больше не пустое. Текст идёт на языке интерфейса, с иконками героев, предметов, способностей, характеристик, талантов и Аганима. Больше не теряются таланты, нейтральные крипы, пояснения и пометки новых предметов.\n"
                              "Понятные сообщения, если герой не найден или Dotabuff изменил страницу.\n"

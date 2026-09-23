@@ -1,7 +1,7 @@
 # Рантайм-зависимости DotaCounters.
 # tkinter входит в стандартную библиотеку Python (в Linux: python3-tk).
 
-cloudscraper>=1.2.71
+curl_cffi>=0.7
 beautifulsoup4>=4.12.0
 Pillow>=10.0.0
 
