@@ -1,5 +1,7 @@
 """Список героев для встроенного браузера и подсказок ввода."""
 
+import re
+
 ALL_HEROES = sorted([
     "Abaddon", "Alchemist", "Ancient Apparition", "Anti-Mage", "Arc Warden",
     "Axe", "Bane", "Batrider", "Beastmaster", "Bloodseeker",
@@ -28,3 +30,33 @@ ALL_HEROES = sorted([
     "Weaver", "Wind Ranger", "Winter Wyvern", "Witch Doctor", "Wraith King",
     "Zeus",
 ])
+
+
+#: Сколько подсказок показывать под полем ввода.
+SUGGEST_LIMIT = 8
+
+_NOT_LETTERS = re.compile(r"[^a-z0-9]")
+
+
+def _key(name: str) -> str:
+    """«Anti-Mage» -> «antimage»: дефисы и апострофы при вводе пропускают."""
+    return _NOT_LETTERS.sub("", name.lower())
+
+
+def suggest(query: str, limit: int = SUGGEST_LIMIT, heroes=None) -> list:
+    """Герои, подходящие под ввод: сначала начинающиеся с запроса.
+
+    Пустой запрос подсказок не даёт. Регистр, дефисы и апострофы не важны,
+    поэтому «antimage» находит «Anti-Mage», а «natures» — «Nature's Prophet».
+    """
+    key = _key(query)
+    if not key:
+        return []
+    starts, inside = [], []
+    for hero in (ALL_HEROES if heroes is None else heroes):
+        name = _key(hero)
+        if name.startswith(key):
+            starts.append(hero)
+        elif key in name:
+            inside.append(hero)
+    return (starts + inside)[:limit]

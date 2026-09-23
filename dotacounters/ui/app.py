@@ -13,6 +13,7 @@ from ..dotabuff import (
     DEFAULT_LIMIT, MAX_LIMIT, DotabuffError, FetchError, HeroNotFound,
     ParseError, fetch_counters,
 )
+from ..heroes import suggest
 from ..i18n import I18N
 from ..net import create_scraper
 from ..patches import fetch_current_patch
@@ -39,6 +40,7 @@ class DotaApp:
         self.tr         = I18N[self._lang]
 
         self.hero_images       = []
+        self._suggest_visible  = False
         self._placeholder_active = False
         self._patch_version    = "…"
         self._active_tab       = "search"   # "search" | "settings" | "updates"
@@ -90,6 +92,11 @@ class DotaApp:
     def _build_ui(self):
         for w in self.root.winfo_children():
             w.destroy()
+        # Полотна, которые должно прокручивать колесо. Список пересобирается
+        # вместе с интерфейсом: прежние виджеты только что уничтожены.
+        self._scrollables = []
+        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            self.root.bind(seq, self._on_wheel)
 
         T = self.T
         self.root.configure(bg=T["BG_DARK"])
@@ -117,6 +124,31 @@ class DotaApp:
         self._build_footer(outer)
 
         self._switch_tab(self._active_tab, rebuild=False)
+
+    def _on_wheel(self, event):
+        """Прокрутить полотно, внутри которого оказался курсор.
+
+        Привязка висит на окне, потому что события колеса от вложенных
+        виджетов (карточек тем, подписей) до самого полотна не доходят.
+        """
+        widget = event.widget
+        if isinstance(widget, str):
+            try:
+                widget = self.root.nametowidget(widget)
+            except KeyError:
+                return None
+        while widget is not None:
+            if widget in self._scrollables:
+                if event.num == 4:
+                    step = -1
+                elif event.num == 5:
+                    step = 1
+                else:
+                    step = int(-1 * event.delta / 120)
+                widget.yview_scroll(step, "units")
+                return "break"
+            widget = getattr(widget, "master", None)
+        return None
 
     def _build_header(self, parent):
         T, tr = self.T, self.tr
@@ -226,10 +258,27 @@ class DotaApp:
                                    insertbackground=T["ACCENT"],
                                    relief="flat", bd=6, highlightthickness=0)
         self.hero_entry.pack(fill=tk.X)
-        self.hero_entry.bind("<Return>", lambda e: self.start_search())
+        self.hero_entry.bind("<Return>", self._on_entry_return)
         self.hero_entry.bind("<FocusIn>",  self._on_entry_focus)
         self.hero_entry.bind("<FocusOut>", self._on_entry_blur)
+        self.hero_entry.bind("<KeyRelease>", self._on_entry_key)
+        self.hero_entry.bind("<Down>", self._suggest_move_down)
+        self.hero_entry.bind("<Up>", self._suggest_move_up)
+        self.hero_entry.bind("<Escape>", lambda e: self._hide_suggestions())
         self._show_placeholder()
+
+        # Выпадающие подсказки. Лежат поверх остальной страницы, поэтому
+        # размещаются через place, а не в сетке.
+        self._suggest_box = tk.Listbox(
+            page, font=self.font_entry, activestyle="none", exportselection=False,
+            bg=T["BG_PANEL"], fg=T["TEXT_PRIMARY"],
+            selectbackground=T["GLOW"], selectforeground=T["ACCENT"],
+            relief="flat", bd=0, highlightthickness=1,
+            highlightbackground=T["ACCENT"], highlightcolor=T["ACCENT"])
+        self._suggest_box.bind("<Button-1>", self._on_suggest_click)
+        self._suggest_box.bind("<Return>", lambda e: self._accept_suggestion())
+        self._suggest_box.bind("<Escape>", lambda e: self._hide_suggestions())
+        self._suggest_visible = False
 
         # Сколько строк показывать в каждом разделе (1..MAX_LIMIT).
         cnt = tk.Frame(row, bg=T["BG_CARD"])
@@ -338,9 +387,7 @@ class DotaApp:
         cw = canvas.create_window((0, 0), window=inner, anchor="nw")
         inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.bind("<Configure>", lambda e: canvas.itemconfig(cw, width=e.width))
-        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
-            canvas.bind(seq, lambda e, c=canvas: c.yview_scroll(
-                -1 if e.num == 4 else (1 if e.num == 5 else int(-1 * e.delta / 120)), "units"))
+        self._scrollables.append(canvas)
 
         inner.columnconfigure(0, weight=1)
         pad = {"padx": 20, "pady": (0, 16)}
@@ -434,9 +481,7 @@ class DotaApp:
         cw = canvas.create_window((0, 0), window=inner, anchor="nw")
         inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.bind("<Configure>", lambda e: canvas.itemconfig(cw, width=e.width))
-        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
-            canvas.bind(seq, lambda e, c=canvas: c.yview_scroll(
-                -1 if e.num == 4 else (1 if e.num == 5 else int(-1 * e.delta / 120)), "units"))
+        self._scrollables.append(canvas)
 
         inner.columnconfigure(0, weight=1)
 
@@ -647,6 +692,9 @@ class DotaApp:
     def _on_entry_blur(self, event):
         if not self.hero_entry.get():
             self._show_placeholder()
+        # С задержкой: щелчок по подсказке сначала уводит фокус из поля, и без
+        # паузы список успел бы исчезнуть до того, как щелчок до него дойдёт.
+        self.root.after(200, self._hide_suggestions)
 
     # ── Scanline animation ────────────────────────────────────────────────────
 
@@ -708,8 +756,97 @@ class DotaApp:
         else:
             self.hero_entry.delete(0, tk.END)
         self.hero_entry.insert(0, hero_name)
+        self._hide_suggestions()
         self._switch_tab("search")
         self.start_search()
+
+    # ── Подсказки при вводе ───────────────────────────────────────────────────
+
+    def _on_entry_key(self, event):
+        """Обновить подсказки. Управляющие клавиши разбираются отдельно."""
+        if event.keysym in ("Up", "Down", "Return", "Escape", "Tab"):
+            return
+        if self._placeholder_active:
+            self._hide_suggestions()
+            return
+        self._update_suggestions()
+
+    def _update_suggestions(self):
+        matches = suggest(self.hero_entry.get())
+        # Точное совпадание — подсказывать уже нечего
+        if not matches or [m.lower() for m in matches] == [self.hero_entry.get().strip().lower()]:
+            self._hide_suggestions()
+            return
+        box = self._suggest_box
+        box.delete(0, tk.END)
+        for hero in matches:
+            box.insert(tk.END, "  " + hero)
+        box.config(height=len(matches))
+        entry, page = self.hero_entry, self._search_page
+        box.place(x=entry.winfo_rootx() - page.winfo_rootx(),
+                  y=entry.winfo_rooty() - page.winfo_rooty() + entry.winfo_height() + 2,
+                  width=entry.winfo_width())
+        box.lift()
+        self._suggest_visible = True
+
+    def _hide_suggestions(self):
+        if not getattr(self, "_suggest_visible", False):
+            return
+        try:
+            self._suggest_box.place_forget()
+        except tk.TclError:
+            pass  # интерфейс пересобрали, прежнего списка уже нет
+        self._suggest_visible = False
+
+    def _suggest_move(self, step):
+        """Перебор подсказок стрелками; первое нажатие вниз открывает список."""
+        if not self._suggest_visible:
+            if step > 0 and not self._placeholder_active:
+                self._update_suggestions()
+            return "break"
+        box = self._suggest_box
+        current = box.curselection()
+        index = (current[0] + step) if current else (0 if step > 0 else box.size() - 1)
+        index = max(0, min(index, box.size() - 1))
+        box.selection_clear(0, tk.END)
+        box.selection_set(index)
+        box.activate(index)
+        box.see(index)
+        return "break"
+
+    def _suggest_move_down(self, event):
+        return self._suggest_move(1)
+
+    def _suggest_move_up(self, event):
+        return self._suggest_move(-1)
+
+    def _accept_suggestion(self, index=None):
+        """Подставить выбранного героя в поле и сразу искать."""
+        box = self._suggest_box
+        if index is None:
+            current = box.curselection()
+            if not current:
+                return False
+            index = current[0]
+        hero = box.get(index).strip()
+        self._placeholder_active = False
+        self.hero_entry.config(fg=self.T["TEXT_PRIMARY"])
+        self.hero_entry.delete(0, tk.END)
+        self.hero_entry.insert(0, hero)
+        self._hide_suggestions()
+        self.start_search()
+        return True
+
+    def _on_suggest_click(self, event):
+        self._accept_suggestion(self._suggest_box.nearest(event.y))
+        return "break"
+
+    def _on_entry_return(self, event):
+        """Enter: взять выделенную подсказку, иначе искать что набрано."""
+        if not (self._suggest_visible and self._accept_suggestion()):
+            self._hide_suggestions()
+            self.start_search()
+        return "break"
 
     # ── Поиск ─────────────────────────────────────────────────────────────────
 

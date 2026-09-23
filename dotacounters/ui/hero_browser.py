@@ -115,9 +115,12 @@ class HeroBrowserModal(tk.Toplevel):
             scrollregion=self._canvas.bbox("all")))
         self._canvas.bind("<Configure>", lambda e: self._canvas.itemconfig(
             self._canvas_window, width=e.width))
+        # Колесо привязано к самому окну, а не к полотну: в Tk событие идёт по
+        # цепочке «виджет → его класс → окно верхнего уровня», а не по
+        # вложенности. Над карточкой героя полотно событие не получало, и
+        # прокрутка работала только в промежутках между карточками.
         for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
-            self._canvas.bind(seq, self._on_mousewheel)
-            self._inner.bind(seq, self._on_mousewheel)
+            self.bind(seq, self._on_mousewheel)
 
         self._count_label = tk.Label(self, text=f"{tr['hb_showing']} {len(ALL_HEROES)} {tr['hb_heroes']}",
                                      font=("Courier New", 8), fg=T["TEXT_MUTED"], bg=T["BG_DARK"])

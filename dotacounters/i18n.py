@@ -90,7 +90,11 @@ I18N = {
         "upd_subtitle":      "Program update history",
         # История изменений: номера в записях — прошлое, поэтому зашиты явно.
         # Верхняя запись обязана совпадать с APP_VERSION — это проверяет тест.
-        "upd_text":          "v1.1.1\n"
+        "upd_text":          "v1.2\n"
+                             "Hero name suggestions appear as you type: arrows to pick one, Enter to search, Escape to dismiss. Hyphens and apostrophes can be skipped, so \"antimage\" finds Anti-Mage.\n"
+                             "The mouse wheel now scrolls the hero list, Settings and Updates wherever the cursor sits; it used to work only in the gaps between cards.\n"
+                             "\n"
+                             "v1.1.1\n"
                              "Counter search works again. Dotabuff's protection started rejecting the previous HTTP client in September 2026 and every search failed with HTTP 403; requests now carry a real browser's TLS fingerprint.\n"
                              "\n"
                              "v1.1\n"
@@ -183,7 +187,11 @@ I18N = {
         # Updates
         "upd_title":         "ОБНОВЛЕНИЯ",
         "upd_subtitle":      "История обновлений программы",
-        "upd_text":          "v1.1.1\n"
+        "upd_text":          "v1.2\n"
+                             "При вводе имени героя появляются подсказки: стрелки — выбрать, Enter — искать, Escape — закрыть. Дефисы и апострофы можно не набирать: «antimage» находит Anti-Mage.\n"
+                             "Колесо мыши теперь прокручивает список героев, настройки и обновления в любом месте окна — раньше оно срабатывало только в промежутках между карточками.\n"
+                             "\n"
+                             "v1.1.1\n"
                              "Поиск контрпиков снова работает. В сентябре 2026 защита Dotabuff перестала пропускать прежний сетевой клиент, и поиск падал с ошибкой HTTP 403; теперь запросы идут с отпечатком настоящего браузера.\n"
                              "\n"
                              "v1.1\n"

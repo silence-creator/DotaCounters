@@ -4,7 +4,7 @@
 
 **Портативный десктопный инструмент для анализа контрпиков в Dota 2.**
 
-![version](https://img.shields.io/badge/version-1.1.1-00d4ff)
+![version](https://img.shields.io/badge/version-1.2-00d4ff)
 ![python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![license](https://img.shields.io/badge/license-MIT-green)
@@ -38,6 +38,8 @@
   и иконками героев, данные берутся с Dotabuff в реальном времени.
 - **Сколько показывать** — от 1 до 12 строк в каждом разделе, поле «КОЛ-ВО»
   рядом с вводом. Выбор запоминается.
+- **Подсказки при вводе** — список подходящих героев под полем; стрелки
+  выбирают, Enter ищет. Дефисы и апострофы можно не набирать.
 - **Список героев** — встроенный браузер всех 126 героев с живым поиском,
   чтобы не набирать имя вручную.
 - **Патчноуты** — просмотр заметок к текущему патчу Dota 2 прямо в программе,
@@ -57,7 +59,7 @@
 
 ## Установка
 
-Скачайте `DotaCounters1.1.1.exe` из раздела
+Скачайте `DotaCounters1.2.exe` из раздела
 [Releases](https://github.com/silence-creator/DotaCounters/releases)
 и запустите. Python и зависимости не нужны — всё внутри.
 
