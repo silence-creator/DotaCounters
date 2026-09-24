@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotacounters import updates  # noqa: E402
 from dotacounters.updates import (  # noqa: E402
     OLD_SUFFIX, Update, check, cleanup_old, download, install, is_newer,
-    parse_version,
+    parse_version, relaunch_env,
 )
 from dotacounters.version import APP_VERSION  # noqa: E402
 
@@ -176,6 +176,27 @@ class InstallTest(unittest.TestCase):
         self.assertIsNone(updates.current_exe(), "тесты идут не из сборки")
         with self.assertRaises(RuntimeError):
             install(self.new)
+
+
+class RelaunchEnvTest(unittest.TestCase):
+    PARENT = {
+        "PATH": r"C:\Windows",
+        "_PYI_APPLICATION_HOME_DIR": r"C:\Temp\_MEI123",
+        "_PYI_ARCHIVE_FILE": r"D:\DotaCounters.exe",
+        "_PYI_PARENT_PROCESS_LEVEL": "1",
+        "_MEIPASS2": r"C:\Temp\_MEI123",
+    }
+
+    def test_drops_parent_unpack_dir(self):
+        env = relaunch_env(self.PARENT)
+        self.assertFalse([k for k in env if k.startswith(("_PYI_", "_MEIPASS"))],
+                         "новая версия не должна жить в папке старой")
+
+    def test_asks_bootloader_to_start_fresh(self):
+        self.assertEqual(relaunch_env(self.PARENT)["PYINSTALLER_RESET_ENVIRONMENT"], "1")
+
+    def test_keeps_the_rest(self):
+        self.assertEqual(relaunch_env(self.PARENT)["PATH"], r"C:\Windows")
 
 
 if __name__ == "__main__":

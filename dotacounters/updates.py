@@ -141,6 +141,22 @@ def download(update: Update, dest: str, scraper=None, progress=None) -> str:
     return dest
 
 
+def relaunch_env(environ=None) -> dict:
+    """Окружение для запуска новой версии из работающей.
+
+    Сборка одним файлом распаковывается во временную папку и передаёт путь к
+    ней своим потомкам через переменные _PYI_*. Новый .exe, унаследовав их,
+    считает себя потомком и работает из чужой папки, а её удаляет выходящая
+    старая версия — вместе с сертификатами для HTTPS. Так после обновления
+    сеть не работала до следующего ручного запуска, и в шапке висел запасной
+    номер патча.
+    """
+    env = {k: v for k, v in (os.environ if environ is None else environ).items()
+           if not k.upper().startswith(("_PYI_", "_MEIPASS"))}
+    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    return env
+
+
 def install(downloaded: str, exe: str | None = None) -> str:
     """Поставить скачанный файл на место текущего. Возвращает путь к нему.
 

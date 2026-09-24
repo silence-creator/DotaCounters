@@ -1,11 +1,4 @@
 # -*- mode: python ; coding: utf-8 -*-
-import re
-
-# Версия берётся из единственного места, где она объявлена, чтобы имя .exe
-# не приходилось править отдельно при каждом релизе.
-with open('dotacounters/version.py', encoding='utf-8') as _f:
-    APP_VERSION = re.search(r'APP_VERSION\s*=\s*"([^"]+)"', _f.read()).group(1)
-
 
 a = Analysis(
     ['main.py'],
@@ -28,7 +21,9 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name=f'DotaCounters{APP_VERSION}',
+    # Имя без версии: обновление ставит новый файл на место старого, и
+    # «DotaCounters1.4.exe» с версией 1.5 внутри только путал бы.
+    name='DotaCounters',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

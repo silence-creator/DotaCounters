@@ -282,7 +282,8 @@ class DotaApp:
     def _restart_after_update(self, exe):
         self._banner_label.config(text=self.tr["upd_restart"])
         self.root.update_idletasks()
-        subprocess.Popen([exe], cwd=os.path.dirname(exe), close_fds=True)
+        subprocess.Popen([exe], cwd=os.path.dirname(exe), close_fds=True,
+                         env=updates.relaunch_env())
         self.root.destroy()
 
     def _on_wheel(self, event):
