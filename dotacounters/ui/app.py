@@ -1,6 +1,5 @@
 """Главное окно приложения: вкладки поиска, настроек и обновлений."""
 
-import io
 import os
 import subprocess
 import threading
@@ -10,7 +9,7 @@ from datetime import date
 from tkinter import font as tkfont
 from tkinter import ttk
 
-from PIL import Image, ImageTk
+from PIL import ImageTk
 
 from .. import updates
 from ..config import load_config, update_config
@@ -21,7 +20,12 @@ from ..dotabuff import (
 from ..draft import MAX_ENEMIES, analyse
 from ..heroes import suggest
 from ..i18n import I18N
+from ..icons import HERO_ICON_BOX, load_icon
 from ..net import create_scraper
+from ..recent import (
+    MAX_FAVOURITES, MAX_HISTORY, clean_list, is_favourite, remember,
+    sane_geometry, toggle_favourite,
+)
 from ..patches import fetch_current_patch
 from ..themes import THEMES
 from ..version import APP_VERSION
@@ -44,6 +48,8 @@ class DotaApp:
         self._theme_key = cfg.get("theme", "cyber")
         self._lang      = cfg.get("lang",  "en")
         self._limit     = self._clamp_limit(cfg.get("limit", DEFAULT_LIMIT))
+        self._history   = clean_list(cfg.get("history"), MAX_HISTORY)
+        self._favourites = clean_list(cfg.get("favourites"), MAX_FAVOURITES)
         self.T          = THEMES[self._theme_key]
         self.tr         = I18N[self._lang]
 
@@ -70,8 +76,29 @@ class DotaApp:
         except Exception:
             pass
 
+        self._restore_geometry(cfg.get("window"))
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+
         threading.Thread(target=self._load_patch, daemon=True).start()
         self._start_update_check()
+
+    # ── Размер и положение окна ───────────────────────────────────────────────
+
+    def _restore_geometry(self, saved):
+        """Вернуть окно туда, где его закрыли, если это место ещё существует."""
+        geometry = sane_geometry(saved, self.root.winfo_screenwidth(),
+                                 self.root.winfo_screenheight())
+        if geometry:
+            self.root.geometry(geometry)
+
+    def _on_close(self):
+        """Запомнить геометрию и закрыться."""
+        try:
+            if self.root.state() == "normal":   # у развёрнутого окна размер чужой
+                update_config(window=self.root.winfo_geometry())
+        except Exception:
+            pass
+        self.root.destroy()
 
     # ── Theme & styles ────────────────────────────────────────────────────────
 
@@ -390,6 +417,7 @@ class DotaApp:
         self.hero_entry.bind("<FocusIn>",  self._on_entry_focus)
         self.hero_entry.bind("<FocusOut>", self._on_entry_blur)
         self._show_placeholder()
+        self.hero_entry.bind("<KeyRelease>", lambda e: self._update_fav_button(), add="+")
         self._suggest = HeroSuggestions(
             page, self.hero_entry, T, self.font_entry,
             on_accept=self._search_hero,
@@ -434,6 +462,18 @@ class DotaApp:
         self.search_btn.bind("<Enter>", lambda e: self.search_btn.config(bg=T["ACCENT2"]))
         self.search_btn.bind("<Leave>", lambda e: self.search_btn.config(bg=T["ACCENT"]))
 
+        self._fav_btn = tk.Button(row, text="☆", font=("Courier New", 14, "bold"),
+                                  bg=T["BG_CARD"], fg=T["TEXT_DIM"],
+                                  activebackground=T["BG_CARD"], activeforeground=T["ACCENT3"],
+                                  relief="flat", bd=0, padx=8, cursor="hand2",
+                                  command=self._toggle_favourite)
+        self._fav_btn.pack(side=tk.LEFT)
+
+        # Избранное и недавние: щелчок по фишке ищет героя
+        self._chips = tk.Frame(inner, bg=T["BG_CARD"])
+        self._chips.pack(fill=tk.X, pady=(10, 0))
+        self._render_hero_chips()
+
         # Status bar
         bar = tk.Frame(page, bg=T["BG_DARK"])
         bar.grid(row=1, column=0, sticky="ew", pady=(0, 6))
@@ -446,6 +486,7 @@ class DotaApp:
         self.scanline_label = tk.Label(bar, text="", font=("Courier New", 9),
                                        fg=T["ACCENT"], bg=T["BG_DARK"])
         self.scanline_label.pack(side=tk.RIGHT)
+        self._search_bar = bar
 
         # Results area
         wrap = tk.Frame(page, bg=T["BG_DARK"])
@@ -480,6 +521,7 @@ class DotaApp:
                            command=self.result_area.yview)
         sb.grid(row=0, column=1, sticky="ns")
         self.result_area.config(yscrollcommand=sb.set)
+        self._copy_button(self._search_bar, self.result_area, self.status_text)
         self._setup_tags()
         self._show_welcome()
 
@@ -540,6 +582,7 @@ class DotaApp:
         self._draft_status = tk.Label(bar, text=tr["draft_hint"], font=self.font_status,
                                       fg=T["TEXT_DIM"], bg=T["BG_DARK"])
         self._draft_status.pack(side=tk.LEFT)
+        self._draft_bar = bar   # кнопку копирования добавим, когда появится вывод
 
         wrap = tk.Frame(page, bg=T["BG_DARK"])
         wrap.grid(row=2, column=0, sticky="nsew", pady=(0, 8))
@@ -565,6 +608,7 @@ class DotaApp:
                            command=self.draft_area.yview)
         sb.grid(row=0, column=1, sticky="ns")
         self.draft_area.config(yscrollcommand=sb.set)
+        self._copy_button(self._draft_bar, self.draft_area, self._draft_status)
         for tag, colour in (("good", T["ACCENT"]), ("bad", T["ACCENT2"]),
                             ("divider", T["TEXT_MUTED"]), ("hero", T["TEXT_PRIMARY"]),
                             ("dim", T["TEXT_DIM"]), ("error", T["ACCENT2"])):
@@ -659,7 +703,6 @@ class DotaApp:
         area.config(state=tk.NORMAL)
         area.delete(1.0, tk.END)
         self.hero_images = []
-        scraper = create_scraper()
 
         for hero, exc in failed:
             area.insert(tk.END, tr["draft_failed"].format(hero=hero, detail=exc), "error")
@@ -683,7 +726,7 @@ class DotaApp:
             area.insert(tk.END, f"  {title}  ◈  {against}\n", tag)
             area.insert(tk.END, rule, "divider")
             for pick in rows:
-                self._insert_icon(scraper, pick.icon_url, area)
+                self._insert_icon(pick.icon_url, area)
                 area.insert(tk.END, f" {pick.hero:<21}", "hero")
                 area.insert(tk.END, "  %+.2f%%\n" % pick.total, tag)
             area.insert(tk.END, "\n", "divider")
@@ -1097,6 +1140,87 @@ class DotaApp:
         self._switch_tab("search")
         self.start_search()
 
+    # ── Копирование результата ────────────────────────────────────────────────
+
+    def _copy_button(self, parent, area, status):
+        T = self.T
+        btn = tk.Button(parent, text=self.tr["copy_btn"], font=("Courier New", 8, "bold"),
+                        bg=T["BG_DARK"], fg=T["TEXT_DIM"],
+                        activebackground=T["BG_DARK"], activeforeground=T["ACCENT"],
+                        relief="flat", bd=0, padx=8, cursor="hand2",
+                        command=lambda: self._copy_area(area, status))
+        btn.pack(side=tk.RIGHT, padx=(8, 0))
+        return btn
+
+    def _copy_area(self, area, status):
+        """Скопировать текст вывода. Иконки в буфер не попадают — только строки."""
+        text = area.get("1.0", tk.END).strip()
+        tr = self.tr
+        if not text:
+            status.config(text=tr["copy_empty"], fg=self.T["TEXT_DIM"])
+            return
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        status.config(text=tr["copied"], fg=self.T["ACCENT"])
+
+    # ── Избранное и недавние ──────────────────────────────────────────────────
+
+    def _render_hero_chips(self):
+        """Строка с избранными и недавними героями под полем ввода."""
+        T, tr = self.T, self.tr
+        for w in self._chips.winfo_children():
+            w.destroy()
+        for label, heroes, star in ((tr["fav_label"], self._favourites, True),
+                                    (tr["recent_label"], self._history, False)):
+            if not heroes:
+                continue
+            tk.Label(self._chips, text=label + ":", font=("Courier New", 8),
+                     fg=T["TEXT_MUTED"], bg=T["BG_CARD"]).pack(side=tk.LEFT, padx=(0, 6))
+            for hero in heroes:
+                text = ("★ " if star else "") + hero
+                chip = tk.Button(self._chips, text=text, font=("Courier New", 9),
+                                 bg=T["BG_PANEL"], fg=T["ACCENT3"] if star else T["TEXT_DIM"],
+                                 activebackground=T["GLOW"], activeforeground=T["ACCENT"],
+                                 relief="flat", bd=0, padx=8, pady=3, cursor="hand2",
+                                 highlightbackground=T["BORDER"], highlightthickness=1,
+                                 command=lambda h=hero: self._search_hero(h))
+                chip.pack(side=tk.LEFT, padx=(0, 6))
+            tk.Frame(self._chips, bg=T["BG_CARD"], width=10).pack(side=tk.LEFT)
+        self._update_fav_button()
+
+    def _update_fav_button(self):
+        """Звезда показывает, в избранном ли герой, который сейчас в поле."""
+        hero = self._current_hero()
+        btn = getattr(self, "_fav_btn", None)
+        if btn is None:
+            return
+        marked = bool(hero) and is_favourite(self._favourites, hero)
+        btn.config(text="★" if marked else "☆",
+                   fg=self.T["ACCENT3"] if marked else self.T["TEXT_DIM"])
+
+    def _current_hero(self):
+        """Герой в поле ввода, приведённый к известному имени."""
+        if self._placeholder_active:
+            return ""
+        typed = self.hero_entry.get().strip()
+        if not typed:
+            return ""
+        matches = suggest(typed, limit=1)
+        return matches[0] if matches else typed
+
+    def _toggle_favourite(self):
+        hero = self._current_hero()
+        if not hero:
+            return
+        self._favourites = toggle_favourite(self._favourites, hero)
+        update_config(favourites=self._favourites)
+        self._render_hero_chips()
+
+    def _remember_hero(self, hero):
+        self._history = remember(self._history, hero)
+        update_config(history=self._history)
+        self._render_hero_chips()
+
     def _search_hero(self, hero):
         """Подставить героя в поле и искать: подсказка, Enter или список героев."""
         self._placeholder_active = False
@@ -1138,6 +1262,8 @@ class DotaApp:
             self._render_error(hero, outcome)
         else:
             self._render_report(outcome)
+            matches = suggest(hero, limit=1)      # запоминаем под известным именем
+            self._remember_hero(matches[0] if matches else hero.strip())
         self.result_area.config(state=tk.DISABLED)
         try:
             self.search_btn.config(state=tk.NORMAL, text=self.tr["btn_search"])
@@ -1160,7 +1286,6 @@ class DotaApp:
         if report.degraded:
             self.result_area.insert(tk.END, tr["warn_degraded"], "wr_bad")
 
-        scraper = create_scraper()
         title = report.hero_slug.upper().replace("-", " ")
         rule = "  " + "─" * 46 + "\n"
 
@@ -1170,29 +1295,27 @@ class DotaApp:
             self.result_area.insert(tk.END, f"  {title}  ◈  {label}\n", tag)
             self.result_area.insert(tk.END, rule, "divider")
             for m in rows:
-                self._insert_icon(scraper, m.icon_url)
+                self._insert_icon(m.icon_url)
                 self.result_area.insert(tk.END, f" {m.hero:<21}", "hero")
                 self.result_area.insert(tk.END, f"  {m.win_rate}\n", "wr_" + tag)
             self.result_area.insert(tk.END, "\n", "divider")
 
         self._set_status(tr["status_complete"], self.T["ACCENT"])
 
-    def _insert_icon(self, scraper, url, area=None):
+    def _insert_icon(self, url, area=None):
         """Иконка героя перед именем; если не загрузилась — просто отступ.
 
-        area задаётся, потому что вывод есть и у поиска, и у драфта.
+        Картинка берётся из кеша на диске, поэтому повторный поиск того же
+        героя не лезет в сеть за теми же иконками. area задаётся, потому что
+        вывод есть и у поиска, и у драфта.
         """
         area = area or self.result_area
         if url:
-            try:
-                data = scraper.get(url, timeout=5).content
-                img = Image.open(io.BytesIO(data)).resize(
-                    (26, 15), Image.Resampling.LANCZOS)
+            img = load_icon(url, box=HERO_ICON_BOX)
+            if img is not None:
                 photo = ImageTk.PhotoImage(img)
                 self.hero_images.append(photo)
                 area.insert(tk.END, "  ")
                 area.image_create(tk.END, image=photo)
                 return
-            except Exception:
-                pass
         area.insert(tk.END, "    ")

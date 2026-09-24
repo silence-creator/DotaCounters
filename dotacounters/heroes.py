@@ -1,6 +1,7 @@
 """Список героев для встроенного браузера и подсказок ввода."""
 
 import re
+from difflib import SequenceMatcher
 
 ALL_HEROES = sorted([
     "Abaddon", "Alchemist", "Ancient Apparition", "Anti-Mage", "Arc Warden",
@@ -37,10 +38,60 @@ SUGGEST_LIMIT = 8
 
 _NOT_LETTERS = re.compile(r"[^a-z0-9]")
 
+#: Побуквенная транслитерация: имена героев Valve не переводит, а набирают их
+#: часто по-русски. Точного совпадения это не даёт («пудж» -> «pudzh» против
+#: «pudge»), поэтому дальше работает нестрогое сравнение.
+_RU_TO_LAT = {
+    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e",
+    "ж": "zh", "з": "z", "и": "i", "й": "y", "к": "k", "л": "l", "м": "m",
+    "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
+    "ф": "f", "х": "h", "ц": "c", "ч": "ch", "ш": "sh", "щ": "sch",
+    "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya",
+}
+
+#: Насколько похожими должны быть строки, чтобы считать это попаданием.
+#: Подобрано на списке реальных русских написаний имён героев.
+FUZZY_RATIO = 0.62
+
+
+def _translit(text: str) -> str:
+    return "".join(_RU_TO_LAT.get(ch, ch) for ch in text.lower())
+
+
+#: Сглаживание написания: применяется к обеим сторонам сравнения, поэтому
+#: правила нужны не «правильные», а одинаково действующие. «кс» и «x» звучат
+#: одинаково (акс -> aks -> ax = Axe), «ee» по-русски пишут через «и»
+#: (мипо -> mipo, Meepo -> mipo).
+_FOLD = (("ks", "x"), ("ph", "f"), ("ck", "k"), ("ee", "i"), ("oo", "u"),
+         ("dzh", "dj"), ("zh", "j"))
+
+
+def _fold(key: str) -> str:
+    for old, new in _FOLD:
+        key = key.replace(old, new)
+    out = []
+    for ch in key:                      # двойные буквы схлопываем
+        if not out or out[-1] != ch:
+            out.append(ch)
+    return "".join(out)
+
 
 def _key(name: str) -> str:
-    """«Anti-Mage» -> «antimage»: дефисы и апострофы при вводе пропускают."""
-    return _NOT_LETTERS.sub("", name.lower())
+    """«Anti-Mage» -> «antimage», «Пудж» -> «pudzh».
+
+    Дефисы и апострофы при вводе пропускают, русские буквы переводятся
+    в латиницу побуквенно.
+    """
+    return _NOT_LETTERS.sub("", _translit(name))
+
+
+def _fuzzy_key(name: str) -> str:
+    """Тот же ключ, но со сглаженным написанием — только для сравнения внахлёст.
+
+    В точном поиске сглаживание мешало бы: «ck» перестало бы находить
+    Clockwerk, потому что превращается в «k».
+    """
+    return _fold(_key(name))
 
 
 def suggest(query: str, limit: int = SUGGEST_LIMIT, heroes=None) -> list:
@@ -52,11 +103,28 @@ def suggest(query: str, limit: int = SUGGEST_LIMIT, heroes=None) -> list:
     key = _key(query)
     if not key:
         return []
-    starts, inside = [], []
-    for hero in (ALL_HEROES if heroes is None else heroes):
-        name = _key(hero)
-        if name.startswith(key):
-            starts.append(hero)
-        elif key in name:
-            inside.append(hero)
-    return (starts + inside)[:limit]
+    names = [(hero, _key(hero)) for hero in (ALL_HEROES if heroes is None else heroes)]
+
+    starts = [hero for hero, name in names if name.startswith(key)]
+    # Одна буква внутри имени встречается почти у всех — не подсказка.
+    inside = [hero for hero, name in names
+              if len(key) >= 2 and key in name and not name.startswith(key)]
+    if starts or inside:
+        return (starts + inside)[:limit]
+
+    # Ничего не совпало буквально — пробуем нестрого: так находятся русские
+    # написания («пудж» -> pudj против pudge) и опечатки. Только запасной
+    # вариант: иначе к точным совпадениям примешивался бы шум.
+    close = []
+    fuzzy = _fuzzy_key(query)
+    for hero, _ in names:
+        name = _fuzzy_key(hero)
+        # Сравниваем и с началом имени той же длины (иначе длинные имена
+        # проигрывают коротким), и с именем целиком, берём лучшее.
+        head = SequenceMatcher(None, fuzzy, name[:max(len(fuzzy), 3)]).ratio()
+        whole = SequenceMatcher(None, fuzzy, name).ratio()
+        ratio = max(head, whole)
+        if ratio >= FUZZY_RATIO:
+            close.append((ratio, hero))
+    close.sort(key=lambda pair: (-pair[0], pair[1]))
+    return [hero for _, hero in close][:limit]

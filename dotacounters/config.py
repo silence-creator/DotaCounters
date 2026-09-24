@@ -24,6 +24,16 @@ def _settings_dir():
 CONFIG_FILE = os.path.join(_settings_dir(), "dota_config.json")
 
 
+def cache_dir() -> str | None:
+    """Папка для скачанного впрок — иконок героев. None, если создать нельзя."""
+    path = os.path.join(_settings_dir(), "cache")
+    try:
+        os.makedirs(path, exist_ok=True)
+        return path
+    except OSError:
+        return None  # папка только для чтения — обойдёмся без кеша
+
+
 def load_config():
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:

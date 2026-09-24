@@ -42,6 +42,14 @@ I18N = {
                              "      {detail}\n",
         "warn_degraded":     "  ⚠  Section headings were not recognised; sections\n"
                              "      identified by position. Data may be mislabelled.\n\n",
+        # Избранное, история, копирование
+        "fav_label":         "Favourites",
+        "recent_label":      "Recent",
+        "fav_add":           "Add to favourites",
+        "fav_remove":        "Remove from favourites",
+        "copy_btn":          "⧉  COPY",
+        "copied":            "Copied to clipboard",
+        "copy_empty":        "Nothing to copy yet",
         # Драфт
         "tab_draft":         "DRAFT",
         "draft_label":       "ENEMY HEROES",
@@ -116,7 +124,14 @@ I18N = {
         "upd_subtitle":      "Program update history",
         # История изменений: номера в записях — прошлое, поэтому зашиты явно.
         # Верхняя запись обязана совпадать с APP_VERSION — это проверяет тест.
-        "upd_text":          "v1.4\n"
+        "upd_text":          "v1.5\n"
+                             "Hero names can be typed in Russian: \"пудж\" finds Pudge, \"мипо\" finds Meepo. Misspellings are forgiven too.\n"
+                             "Favourites and recent heroes sit under the search field — one click repeats a search. The star marks the hero in the field.\n"
+                             "Hero icons are kept on disk, so repeating a search no longer downloads them again and finishes about six times faster.\n"
+                             "A Copy button puts the result into the clipboard as text.\n"
+                             "The window opens where it was closed, in the same size.\n"
+                             "\n"
+                             "v1.4\n"
                              "New Draft tab: add up to five enemy heroes and the app sums their matchups to show which heroes to pick against that line-up, and which to avoid.\n"
                              "Counter searches are steadier: Dotabuff turned away part of the requests, so a request is now retried and a draft runs on a single connection.\n"
                              "\n"
@@ -175,6 +190,14 @@ I18N = {
                              "      {detail}\n",
         "warn_degraded":     "  ⚠  Заголовки разделов не опознаны, разделы определены\n"
                              "      по позиции. Подписи могут быть перепутаны.\n\n",
+        # Избранное, история, копирование
+        "fav_label":         "Избранное",
+        "recent_label":      "Недавние",
+        "fav_add":           "В избранное",
+        "fav_remove":        "Убрать из избранного",
+        "copy_btn":          "⧉  КОПИРОВАТЬ",
+        "copied":            "Скопировано в буфер",
+        "copy_empty":        "Копировать пока нечего",
         # Драфт
         "tab_draft":         "ДРАФТ",
         "draft_label":       "ГЕРОИ ПРОТИВНИКА",
@@ -247,7 +270,14 @@ I18N = {
         "upd_error":         "Не удалось обновить: {detail}",
         "upd_title":         "ОБНОВЛЕНИЯ",
         "upd_subtitle":      "История обновлений программы",
-        "upd_text":          "v1.4\n"
+        "upd_text":          "v1.5\n"
+                             "Имя героя можно набирать по-русски: «пудж» находит Pudge, «мипо» — Meepo. Опечатки тоже прощаются.\n"
+                             "Под полем поиска — избранное и недавние герои, щелчок повторяет поиск. Звёздочка отмечает героя, который сейчас в поле.\n"
+                             "Иконки героев хранятся на диске: повторный поиск больше не качает их заново и проходит примерно в шесть раз быстрее.\n"
+                             "Кнопка «Копировать» кладёт результат в буфер обмена текстом.\n"
+                             "Окно открывается там же и такого же размера, каким его закрыли.\n"
+                             "\n"
+                             "v1.4\n"
                              "Новая вкладка «Драфт»: добавьте до пяти героев противника, и программа сложит их матчапы и покажет, кого брать против такого состава, а кого не стоит.\n"
                              "Поиск контрпиков стал надёжнее: Dotabuff отбивал часть запросов, теперь запрос повторяется, а подбор в драфте идёт одним соединением.\n"
                              "\n"

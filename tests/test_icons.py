@@ -143,6 +143,66 @@ class RasterizeSvgTest(unittest.TestCase):
         self.assertGreater(after, before * 5)
 
 
+class DiskCacheTest(unittest.TestCase):
+    """Иконки не меняются годами — второй раз их качать незачем."""
+
+    class Scraper:
+        def __init__(self, data):
+            self.data, self.calls = data, 0
+
+        def get(self, url, **kwargs):
+            self.calls += 1
+            return type("R", (), {"status_code": 200, "content": self.data,
+                                  "text": self.data.decode("utf-8", "replace")})()
+
+    def setUp(self):
+        import io as _io
+        import shutil
+        import tempfile
+        from dotacounters import icons as icons_module
+        self.icons = icons_module
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+
+        buf = _io.BytesIO()
+        Image.new("RGB", (64, 64), "red").save(buf, "PNG")
+        self.scraper = self.Scraper(buf.getvalue())
+
+        self._saved = (icons_module.cache_dir, icons_module._scraper, dict(icons_module._cache))
+        icons_module.cache_dir = lambda: folder
+        icons_module._scraper = lambda: self.scraper
+        icons_module._cache.clear()
+        self.addCleanup(self._restore)
+
+    def _restore(self):
+        self.icons.cache_dir, self.icons._scraper, cache = self._saved
+        self.icons._cache.clear()
+        self.icons._cache.update(cache)
+
+    def test_second_run_reads_from_disk(self):
+        url = "https://example/heroes/axe.png"
+        first = self.icons.fetch_icons([url], box=(24, 16))
+        self.assertIn(url, first)
+        self.assertEqual(self.scraper.calls, 1)
+
+        self.icons._cache.clear()                   # как будто программу перезапустили
+        second = self.icons.fetch_icons([url], box=(24, 16))
+        self.assertIn(url, second)
+        self.assertEqual(self.scraper.calls, 1, "второй раз в сеть не ходим")
+
+    def test_memory_cache_avoids_disk_and_network(self):
+        url = "https://example/heroes/axe.png"
+        self.icons.fetch_icons([url], box=(24, 16))
+        self.icons.fetch_icons([url], box=(24, 16))
+        self.assertEqual(self.scraper.calls, 1)
+
+    def test_broken_cache_folder_still_works(self):
+        self.icons.cache_dir = lambda: None          # папка только для чтения
+        self.icons._cache.clear()
+        url = "https://example/heroes/axe.png"
+        self.assertIn(url, self.icons.fetch_icons([url], box=(24, 16)))
+
+
 class FitToBoxTest(unittest.TestCase):
     BOX = (24, 16)
 

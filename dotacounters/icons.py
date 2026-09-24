@@ -4,18 +4,24 @@
 можно создавать только в главном потоке Tk, а качать удобнее в фоновом.
 """
 
+import hashlib
 import io
+import os
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
+from .config import cache_dir
 from .net import create_scraper
 
 #: Адреса с этим префиксом не качаются, а рисуются здесь же — для значков,
 #: которых нет на CDN Valve.
 LOCAL_ICON_PREFIX = "local:"
+
+#: Рамка иконки героя в списке контрпиков: под строку шрифта Courier New 12.
+HERO_ICON_BOX = (26, 15)
 
 #: Цвет кружка для рисованных значков: регенерация здоровья и маны в цветах
 #: полосок здоровья и маны из игры.
@@ -231,21 +237,63 @@ def thicken(img: Image.Image, ratio: float = 7 / 96) -> Image.Image:
     return out
 
 
+def _disk_path(url: str) -> str | None:
+    """Файл кеша для адреса. Имя — хеш, чтобы не зависеть от длины и символов."""
+    folder = cache_dir()
+    if folder is None:
+        return None
+    suffix = ".svg" if url.lower().endswith(".svg") else ".bin"
+    return os.path.join(folder, hashlib.sha1(url.encode("utf-8")).hexdigest() + suffix)
+
+
+def _download(url: str) -> bytes | None:
+    """Скачать файл, заглянув сперва в кеш на диске.
+
+    Иконки героев и предметов не меняются годами, а за поиск их набегает
+    полтора десятка, поэтому качать их каждый раз незачем.
+    """
+    path = _disk_path(url)
+    if path:
+        try:
+            with open(path, "rb") as f:
+                return f.read()
+        except OSError:
+            pass
+    resp = _scraper().get(url, timeout=10)
+    if resp.status_code != 200:
+        return None
+    data = resp.content
+    if path:
+        try:
+            tmp = path + ".part"       # чтобы в кеше не осело полфайла
+            with open(tmp, "wb") as f:
+                f.write(data)
+            os.replace(tmp, path)
+        except OSError:
+            pass
+    return data
+
+
 def _load(url: str, box: tuple):
     if url.startswith(LOCAL_ICON_PREFIX):
         img = draw_local_icon(url[len(LOCAL_ICON_PREFIX):])
         return fit_to_box(img, box) if img is not None else None
     try:
-        resp = _scraper().get(url, timeout=10)
-        if resp.status_code != 200:
+        data = _download(url)
+        if data is None:
             return None
         if url.lower().endswith(".svg"):
             # Рисуем крупно — при ужатии в рамку края выйдут сглаженными.
-            big = rasterize_svg(resp.text, height=box[1] * 6)
+            big = rasterize_svg(data.decode("utf-8", "replace"), height=box[1] * 6)
             return fit_to_box(thicken(big), box)
-        return fit_to_box(Image.open(io.BytesIO(resp.content)), box)
+        return fit_to_box(Image.open(io.BytesIO(data)), box)
     except Exception:
         return None
+
+
+def load_icon(url: str, box=(24, 16)):
+    """Одна иконка: память, потом диск, потом сеть. None, если не вышло."""
+    return fetch_icons([url], box=box).get(url)
 
 
 def fetch_icons(urls, box=(24, 16), workers=8) -> dict:
