@@ -4,7 +4,7 @@
 
 **Портативный десктопный инструмент для анализа контрпиков в Dota 2.**
 
-![version](https://img.shields.io/badge/version-1.3-00d4ff)
+![version](https://img.shields.io/badge/version-1.4-00d4ff)
 ![python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![license](https://img.shields.io/badge/license-MIT-green)
@@ -65,7 +65,7 @@
 
 ## Установка
 
-Скачайте `DotaCounters1.3.exe` из раздела
+Скачайте `DotaCounters1.4.exe` из раздела
 [Releases](https://github.com/silence-creator/DotaCounters/releases)
 и запустите. Python и зависимости не нужны — всё внутри.
 
