@@ -1,7 +1,6 @@
 """Главное окно приложения: вкладки поиска, настроек и обновлений."""
 
 import os
-import subprocess
 import threading
 import tkinter as tk
 import webbrowser
@@ -11,7 +10,7 @@ from tkinter import ttk
 
 from PIL import ImageTk
 
-from .. import updates
+from .. import relaunch, updates
 from ..config import load_config, update_config
 from ..dotabuff import (
     DEFAULT_LIMIT, MAX_LIMIT, DotabuffError, FetchError, HeroNotFound,
@@ -282,8 +281,7 @@ class DotaApp:
     def _restart_after_update(self, exe):
         self._banner_label.config(text=self.tr["upd_restart"])
         self.root.update_idletasks()
-        subprocess.Popen([exe], cwd=os.path.dirname(exe), close_fds=True,
-                         env=updates.relaunch_env())
+        relaunch.launch(exe)
         self.root.destroy()
 
     def _on_wheel(self, event):

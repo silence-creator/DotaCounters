@@ -4,7 +4,7 @@
 
 **Портативный десктопный инструмент для анализа контрпиков в Dota 2.**
 
-![version](https://img.shields.io/badge/version-1.5-00d4ff)
+![version](https://img.shields.io/badge/version-1.5.1-00d4ff)
 ![python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![license](https://img.shields.io/badge/license-MIT-green)
@@ -119,6 +119,7 @@ dotacounters/
     patches.py          патч и патчноуты из datafeed Valve
     icons.py            загрузка иконок, простая отрисовка SVG
     updates.py          проверка и установка обновлений с GitHub
+    relaunch.py         перезапуск после обновления с чистым окружением
     recent.py           избранное, недавние герои, геометрия окна
     ui/
         app.py          главное окно

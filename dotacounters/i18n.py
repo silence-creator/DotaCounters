@@ -124,7 +124,11 @@ I18N = {
         "upd_subtitle":      "Program update history",
         # История изменений: номера в записях — прошлое, поэтому зашиты явно.
         # Верхняя запись обязана совпадать с APP_VERSION — это проверяет тест.
-        "upd_text":          "v1.5\n"
+        "upd_text":          "v1.5.1\n"
+                             "The network works right after an update. Previously the first launch after Update could not reach any site: the header showed a stale patch number and searches failed until the program was restarted by hand.\n"
+                             "The file is now simply DotaCounters.exe, without a version in its name.\n"
+                             "\n"
+                             "v1.5\n"
                              "Hero names can be typed in Russian: \"пудж\" finds Pudge, \"мипо\" finds Meepo. Misspellings are forgiven too.\n"
                              "Favourites and recent heroes sit under the search field — one click repeats a search. The star marks the hero in the field.\n"
                              "Hero icons are kept on disk, so repeating a search no longer downloads them again and finishes about six times faster.\n"
@@ -270,7 +274,11 @@ I18N = {
         "upd_error":         "Не удалось обновить: {detail}",
         "upd_title":         "ОБНОВЛЕНИЯ",
         "upd_subtitle":      "История обновлений программы",
-        "upd_text":          "v1.5\n"
+        "upd_text":          "v1.5.1\n"
+                             "Сеть работает сразу после обновления. Раньше первый запуск после кнопки «Обновить» не мог достучаться ни до одного сайта: в шапке был устаревший номер патча, а поиск не работал, пока программу не перезапустишь вручную.\n"
+                             "Файл теперь называется просто DotaCounters.exe, без версии в имени.\n"
+                             "\n"
+                             "v1.5\n"
                              "Имя героя можно набирать по-русски: «пудж» находит Pudge, «мипо» — Meepo. Опечатки тоже прощаются.\n"
                              "Под полем поиска — избранное и недавние герои, щелчок повторяет поиск. Звёздочка отмечает героя, который сейчас в поле.\n"
                              "Иконки героев хранятся на диске: повторный поиск больше не качает их заново и проходит примерно в шесть раз быстрее.\n"

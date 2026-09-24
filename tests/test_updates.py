@@ -15,7 +15,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotacounters import updates  # noqa: E402
 from dotacounters.updates import (  # noqa: E402
     OLD_SUFFIX, Update, check, cleanup_old, download, install, is_newer,
-    parse_version, relaunch_env,
+    parse_version,
+)
+from dotacounters.relaunch import (  # noqa: E402
+    CLEAN_MARK, needs_clean_restart, relaunch_env,
 )
 from dotacounters.version import APP_VERSION  # noqa: E402
 
@@ -197,6 +200,37 @@ class RelaunchEnvTest(unittest.TestCase):
 
     def test_keeps_the_rest(self):
         self.assertEqual(relaunch_env(self.PARENT)["PATH"], r"C:\Windows")
+
+    def test_marks_clean_start(self):
+        self.assertEqual(relaunch_env(self.PARENT)[CLEAN_MARK], "1")
+
+
+class CleanRestartTest(unittest.TestCase):
+    """Новая версия сама чинит запуск, если её перезапустила 1.5 и старше."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir, True)
+        self.exe = os.path.join(self.dir, "DotaCounters.exe")
+        open(self.exe, "wb").close()
+
+    def _updated(self):
+        open(self.exe + OLD_SUFFIX, "wb").close()
+
+    def test_old_build_launched_us(self):
+        self._updated()
+        self.assertTrue(needs_clean_restart(self.exe, {"_PYI_PARENT_PROCESS_LEVEL": "1"}))
+
+    def test_already_clean(self):
+        self._updated()
+        self.assertFalse(needs_clean_restart(self.exe, relaunch_env({})),
+                         "после чистого перезапуска второй не нужен — иначе петля")
+
+    def test_ordinary_start(self):
+        self.assertFalse(needs_clean_restart(self.exe, {}))
+
+    def test_from_source(self):
+        self.assertFalse(needs_clean_restart(None, {}))
 
 
 if __name__ == "__main__":
