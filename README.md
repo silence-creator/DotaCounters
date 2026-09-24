@@ -132,12 +132,18 @@ dotacounters/
 ## Сборка .exe
 
 ```bash
-pip install pyinstaller
-pyinstaller main.spec
+python -m pip install pyinstaller
+python -m PyInstaller main.spec
 ```
 
 Готовый файл появится в `dist/`. Спека собирает всё в один исполняемый файл
 без консольного окна, с иконкой из `icon.png`.
+
+> Команды намеренно начинаются с `python -m`. Если в системе несколько версий
+> Python, `pyinstaller` из PATH может принадлежать другой из них, и сборка
+> получится на её библиотеках. Так вышло с первой сборкой 1.4: она собралась
+> на Python 3.14 и не запускалась там, где Windows старее, чем требует 3.14.
+> Версия Python в сборке видна по имени `pythonXYZ.dll` внутри `.exe`.
 
 ---
 
