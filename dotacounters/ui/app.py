@@ -14,13 +14,13 @@ from .. import relaunch, updates
 from ..config import load_config, update_config
 from ..dotabuff import (
     DEFAULT_LIMIT, MAX_LIMIT, DotabuffError, FetchError, HeroNotFound,
-    ParseError, fetch_counters,
+    ParseError, fetch_counters, fetch_many,
 )
 from ..draft import MAX_ENEMIES, analyse
 from ..heroes import suggest
+from ..hotkey import DEFAULT_HOTKEY, GlobalHotkey, format_hotkey, parse_hotkey
 from ..i18n import I18N
 from ..icons import HERO_ICON_BOX, load_icon
-from ..net import create_scraper
 from ..recent import (
     MAX_FAVOURITES, MAX_HISTORY, clean_list, is_favourite, remember,
     sane_geometry, toggle_favourite,
@@ -29,6 +29,7 @@ from ..patches import fetch_current_patch
 from ..themes import THEMES
 from ..version import APP_VERSION
 from .hero_browser import HeroBrowserModal
+from .overlay import Overlay
 from .patch_notes import PatchNotesModal
 from .suggestions import HeroSuggestions
 from .winapi import set_title_bar_color
@@ -62,6 +63,18 @@ class DotaApp:
         self._update_status    = None
         updates.cleanup_old()               # хвост от прошлого обновления
 
+        # Оверлей и его клавиша живут всё время работы программы, а не
+        # пересобираются вместе с интерфейсом.
+        self._hotkey_text = self._hotkey_setting(cfg.get("overlay_hotkey"))
+        self._overlay = Overlay(self.root, self.T, self.tr, limit=lambda: self._limit,
+                                hotkey_label=format_hotkey(self._hotkey_text),
+                                position=cfg.get("overlay_pos"),
+                                on_move=lambda pos: update_config(overlay_pos=pos),
+                                on_search=self._remember_hero)
+        self._hotkey = GlobalHotkey(self._hotkey_text,
+                                    lambda: self.root.after(0, self._overlay.toggle))
+        self._hotkey_ok = self._hotkey.start()
+
         self._setup_fonts()
         self._apply_theme_styles()
         self.root.configure(bg=self.T["BG_DARK"])
@@ -92,6 +105,7 @@ class DotaApp:
 
     def _on_close(self):
         """Запомнить геометрию и закрыться."""
+        self._hotkey.stop()
         try:
             if self.root.state() == "normal":   # у развёрнутого окна размер чужой
                 update_config(window=self.root.winfo_geometry())
@@ -129,8 +143,11 @@ class DotaApp:
     # ── Full UI rebuild (called on theme/lang change) ─────────────────────────
 
     def _build_ui(self):
+        # Окно оверлея тоже потомок root, но его пересобирает сам оверлей и с
+        # сохранением содержимого — здесь его не трогаем.
         for w in self.root.winfo_children():
-            w.destroy()
+            if w is not self._overlay.win:
+                w.destroy()
         # Полотна, которые должно прокручивать колесо. Список пересобирается
         # вместе с интерфейсом: прежние виджеты только что уничтожены.
         self._scrollables = []
@@ -149,8 +166,10 @@ class DotaApp:
 
         self._build_header(outer)
         self._build_tab_bar(outer)
+        # Линия остаётся под вкладками, плашка обновления — ниже неё: раньше
+        # плашка стояла вплотную к вкладкам и сливалась с ними.
+        tk.Frame(outer, bg=T["BORDER"], height=1).grid(row=2, column=0, sticky="ew", pady=(0, 10))
         self._build_update_banner(outer)
-        tk.Frame(outer, bg=T["BORDER"], height=1).grid(row=3, column=0, sticky="ew", pady=(0, 10))
 
         # Content frame — swapped by tabs
         self._content = tk.Frame(outer, bg=T["BG_DARK"])
@@ -173,13 +192,13 @@ class DotaApp:
         T = self.T
         self._banner = tk.Frame(parent, bg=T["BG_PANEL"],
                                 highlightbackground=T["ACCENT3"], highlightthickness=1)
-        self._banner.grid(row=2, column=0, sticky="ew", pady=(0, 8))
+        self._banner.grid(row=3, column=0, sticky="ew", pady=(2, 12))
         self._banner.grid_remove()
         self._banner_label = tk.Label(self._banner, text="", font=("Courier New", 10, "bold"),
                                       fg=T["ACCENT3"], bg=T["BG_PANEL"])
-        self._banner_label.pack(side=tk.LEFT, padx=12, pady=7)
+        self._banner_label.pack(side=tk.LEFT, padx=14, pady=10)
         self._banner_buttons = tk.Frame(self._banner, bg=T["BG_PANEL"])
-        self._banner_buttons.pack(side=tk.RIGHT, padx=8)
+        self._banner_buttons.pack(side=tk.RIGHT, padx=10, pady=6)
         if getattr(self, "_update", None):
             self._show_update(self._update)
 
@@ -360,6 +379,34 @@ class DotaApp:
             )
             btn.pack(side=tk.LEFT)
             self._tab_btns[key] = btn
+
+        # Оверлей — справа от вкладок, с подсказкой, какая клавиша его зовёт
+        key = format_hotkey(self._hotkey_text)
+        tk.Label(bar, text=key if self._hotkey_ok else tr["ov_key_busy"].format(key=key),
+                 font=("Courier New", 8),
+                 fg=T["TEXT_DIM"] if self._hotkey_ok else T["ACCENT2"],
+                 bg=T["BG_DARK"]).pack(side=tk.RIGHT, padx=(4, 0))
+        tk.Button(bar, text=tr["ov_btn"], font=self.font_tab,
+                  bg=T["BG_DARK"], fg=T["ACCENT3"],
+                  activebackground=T["BG_PANEL"], activeforeground=T["ACCENT"],
+                  relief="flat", bd=0, padx=10, pady=7, cursor="hand2",
+                  command=self._overlay_button).pack(side=tk.RIGHT)
+
+    @staticmethod
+    def _hotkey_setting(value):
+        """Клавиша из конфига, если она разбирается; иначе стандартная."""
+        try:
+            parse_hotkey(value)
+            return value
+        except ValueError:
+            return DEFAULT_HOTKEY
+
+    def _overlay_button(self):
+        """Кнопка в главном окне: показать или спрятать, без перехвата фокуса."""
+        if self._overlay.visible:
+            self._overlay.hide()
+        else:
+            self._overlay.show()
 
     def _switch_tab(self, key, rebuild=True):
         T = self.T
@@ -682,17 +729,7 @@ class DotaApp:
 
     def _bg_draft(self, enemies):
         """Страница на каждого врага, затем сложение матчапов."""
-        # Одна сессия на весь подбор: на серии запросов с новым соединением
-        # каждый раз Cloudflare отбивает часть из них.
-        scraper = create_scraper()
-        reports, failed = {}, []
-        for hero in enemies:
-            try:
-                reports[hero] = fetch_counters(hero, scraper=scraper, limit=self._limit)
-            except DotabuffError as exc:
-                failed.append((hero, exc))
-            except Exception as exc:
-                failed.append((hero, FetchError(str(exc))))
+        reports, failed = fetch_many(enemies, limit=self._limit)
         result = analyse(reports, limit=self._limit) if reports else None
         self.root.after(0, self._apply_draft, result, failed)
 
@@ -1018,6 +1055,7 @@ class DotaApp:
         self._apply_theme_styles()
         self._build_ui()
         set_title_bar_color(self.root)
+        self._overlay.restyle(self.T, self.tr)
 
     # ── Footer ────────────────────────────────────────────────────────────────
 

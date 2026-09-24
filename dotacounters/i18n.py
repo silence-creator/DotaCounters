@@ -65,6 +65,24 @@ I18N = {
         "draft_failed":      "  ✕  {hero}: {detail}\n",
         "draft_skipped":     "  ⚠  No full matchup table for: {heroes}. They were left out.\n",
         "draft_footnote":    "\n  Numbers add up each hero's advantage over the enemies, from Dotabuff.\n",
+        # Оверлей поверх игры
+        "ov_btn":            "⧉  OVERLAY",
+        "ov_key_busy":       "{key} is taken",
+        "ov_counters":       "COUNTERS",
+        "ov_draft":          "DRAFT",
+        "ov_hint_counters":  "Hero name, then Enter",
+        "ov_hint_draft":     "Enemy hero, then Enter",
+        "ov_draft_empty":    "Add enemy heroes as they are picked",
+        "ov_clear":          "CLEAR",
+        "ov_loading":        "Loading…",
+        "ov_not_found":      "No hero named “{hero}”",
+        "ov_network":        "Dotabuff is not responding",
+        "ov_layout":         "Dotabuff changed its page",
+        "ov_failed":         "{hero}: not loaded",
+        "ov_nothing":        "Nothing to suggest",
+        "ov_pick":           "PICK",
+        "ov_avoid":          "AVOID",
+        "ov_footer":         "{key} — show / hide  ·  Esc — hide",
         # Hero browser
         "hb_title":          "HERO BROWSER",
         "hb_sorted":         "heroes  ·  sorted A → Z",
@@ -124,7 +142,13 @@ I18N = {
         "upd_subtitle":      "Program update history",
         # История изменений: номера в записях — прошлое, поэтому зашиты явно.
         # Верхняя запись обязана совпадать с APP_VERSION — это проверяет тест.
-        "upd_text":          "v1.5.1\n"
+        "upd_text":          "v1.6\n"
+                             "Overlay: a narrow window on top of the game. Ctrl+Shift+D shows it and puts the cursor in the field even while the game is active; pressing it again or Esc hides it. The OVERLAY button next to the tabs does the same.\n"
+                             "The overlay has two modes. Counters: type a hero and press Enter. Draft: add enemy heroes one by one as they are picked, and the picks are recalculated at once; a click on an enemy removes it.\n"
+                             "The overlay can be dragged by its top bar and remembers where it was left. It works with Dota in windowed or borderless mode, not in exclusive fullscreen.\n"
+                             "The update bar no longer sticks to the tabs and the search field.\n"
+                             "\n"
+                             "v1.5.1\n"
                              "The network works right after an update. Previously the first launch after Update could not reach any site: the header showed a stale patch number and searches failed until the program was restarted by hand.\n"
                              "The file is now simply DotaCounters.exe, without a version in its name.\n"
                              "\n"
@@ -217,6 +241,24 @@ I18N = {
         "draft_failed":      "  ✕  {hero}: {detail}\n",
         "draft_skipped":     "  ⚠  Нет полной таблицы матчапов: {heroes}. Они не учтены.\n",
         "draft_footnote":    "\n  Число — сумма преимуществ героя над противниками по данным Dotabuff.\n",
+        # Оверлей поверх игры
+        "ov_btn":            "⧉  ОВЕРЛЕЙ",
+        "ov_key_busy":       "{key} занята",
+        "ov_counters":       "КОНТРПИКИ",
+        "ov_draft":          "ДРАФТ",
+        "ov_hint_counters":  "Имя героя, затем Enter",
+        "ov_hint_draft":     "Герой врага, затем Enter",
+        "ov_draft_empty":    "Добавляйте врагов по мере пиков",
+        "ov_clear":          "СБРОС",
+        "ov_loading":        "Загрузка…",
+        "ov_not_found":      "Нет героя «{hero}»",
+        "ov_network":        "Dotabuff не отвечает",
+        "ov_layout":         "Dotabuff изменил страницу",
+        "ov_failed":         "{hero}: не загрузился",
+        "ov_nothing":        "Подбирать не из чего",
+        "ov_pick":           "БРАТЬ",
+        "ov_avoid":          "НЕ БРАТЬ",
+        "ov_footer":         "{key} — показать / скрыть  ·  Esc — скрыть",
         # Hero browser
         "hb_title":          "СПИСОК ГЕРОЕВ",
         "hb_sorted":         "героев  ·  по алфавиту",
@@ -274,7 +316,13 @@ I18N = {
         "upd_error":         "Не удалось обновить: {detail}",
         "upd_title":         "ОБНОВЛЕНИЯ",
         "upd_subtitle":      "История обновлений программы",
-        "upd_text":          "v1.5.1\n"
+        "upd_text":          "v1.6\n"
+                             "Оверлей — узкое окно поверх игры. Ctrl+Shift+D показывает его и ставит курсор в поле ввода, даже когда активна игра; повторное нажатие или Esc прячет. То же делает кнопка «ОВЕРЛЕЙ» рядом с вкладками.\n"
+                             "В оверлее два режима. Контрпики: набрали героя — Enter. Драфт: добавляйте героев противника по одному, по мере пиков, и подбор пересчитывается сразу; щелчок по врагу убирает его.\n"
+                             "Оверлей перетаскивается за верхнюю полосу и запоминает, где его оставили. Работает, когда Dota запущена в окне или в окне без рамки; в полноэкранном исключительном режиме — нет.\n"
+                             "Плашка обновления больше не липнет к вкладкам и полю поиска.\n"
+                             "\n"
+                             "v1.5.1\n"
                              "Сеть работает сразу после обновления. Раньше первый запуск после кнопки «Обновить» не мог достучаться ни до одного сайта: в шапке был устаревший номер патча, а поиск не работал, пока программу не перезапустишь вручную.\n"
                              "Файл теперь называется просто DotaCounters.exe, без версии в имени.\n"
                              "\n"

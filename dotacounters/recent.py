@@ -79,3 +79,24 @@ def sane_geometry(value, screen_width: int, screen_height: int,
     if y < 0 or y > screen_height - 60:
         return None
     return "%dx%d%+d%+d" % (width, height, x, y)
+
+
+_POSITION_RE = re.compile(r"^([+-]-?\d{1,5})([+-]-?\d{1,5})$")
+
+
+def sane_position(value, screen_width: int, screen_height: int,
+                  width: int, height: int) -> str | None:
+    """Проверить запомненное место окна без рамки «+X+Y».
+
+    У такого окна нет заголовка, за который его можно вытащить, поэтому оно
+    должно целиком помещаться на экране. Иначе None.
+    """
+    if not isinstance(value, str):
+        return None
+    found = _POSITION_RE.match(value.strip())
+    if not found:
+        return None
+    x, y = int(found.group(1)), int(found.group(2))
+    if x < 0 or y < 0 or x + width > screen_width or y + height > screen_height:
+        return None
+    return "%+d%+d" % (x, y)

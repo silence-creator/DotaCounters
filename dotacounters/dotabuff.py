@@ -295,3 +295,23 @@ def fetch_counters(hero_name: str, scraper=None,
         raise FetchError("HTTP %d" % resp.status_code)
 
     return parse_counters(resp.text, slug, limit=limit)
+
+
+def fetch_many(heroes, limit: int = DEFAULT_LIMIT, scraper=None, fetch=None):
+    """Страницы нескольких героев одной сессией: -> (отчёты, [(герой, ошибка)]).
+
+    Одна сессия на всю серию: на серии запросов с новым соединением каждый раз
+    Cloudflare отбивает часть из них. Ошибка по одному герою не прерывает
+    остальных. fetch подменяется в тестах.
+    """
+    fetch = fetch or fetch_counters
+    scraper = scraper or create_scraper()
+    reports, failed = {}, []
+    for hero in heroes:
+        try:
+            reports[hero] = fetch(hero, scraper=scraper, limit=limit)
+        except DotabuffError as exc:
+            failed.append((hero, exc))
+        except Exception as exc:
+            failed.append((hero, FetchError(str(exc))))
+    return reports, failed

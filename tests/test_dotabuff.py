@@ -16,7 +16,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotacounters import dotabuff  # noqa: E402
 from dotacounters.dotabuff import (  # noqa: E402
-    MAX_LIMIT, CounterReport, ParseError, hero_slug, parse_counters,
+    MAX_LIMIT, CounterReport, FetchError, HeroNotFound, ParseError, fetch_many,
+    hero_slug, parse_counters,
 )
 
 FIXTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -202,6 +203,29 @@ class DegradedFallbackTest(unittest.TestCase):
         report = parse_counters(html, "drow-ranger")
         self.assertTrue(report.degraded)
         self.assertEqual(len(report.countered_by), 5)
+
+
+class FetchManyTest(unittest.TestCase):
+    """Серия страниц: одна сессия на всех, ошибка одного не мешает остальным."""
+
+    def test_one_session_and_errors_kept_apart(self):
+        sessions = []
+
+        def fetch(hero, scraper=None, limit=None):
+            sessions.append(scraper)
+            if hero == "Nobody":
+                raise HeroNotFound(hero)
+            if hero == "Broken":
+                raise RuntimeError("connection reset")
+            return "report:" + hero
+
+        reports, failed = fetch_many(["Pudge", "Nobody", "Broken", "Lina"],
+                                     scraper="session", fetch=fetch)
+        self.assertEqual(reports, {"Pudge": "report:Pudge", "Lina": "report:Lina"})
+        self.assertEqual([h for h, _ in failed], ["Nobody", "Broken"])
+        self.assertIsInstance(failed[0][1], HeroNotFound)
+        self.assertIsInstance(failed[1][1], FetchError, "чужая ошибка приводится к FetchError")
+        self.assertEqual(set(sessions), {"session"})
 
 
 if __name__ == "__main__":

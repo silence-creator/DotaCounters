@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotacounters.recent import (  # noqa: E402
     MAX_FAVOURITES, MAX_HISTORY, clean_list, is_favourite, remember,
-    sane_geometry, toggle_favourite,
+    sane_geometry, sane_position, toggle_favourite,
 )
 
 
@@ -91,6 +91,19 @@ class GeometryTest(unittest.TestCase):
     def test_slightly_offscreen_left_is_kept(self):
         """Чуть выехавшее за край окно поймать мышью ещё можно."""
         self.assertEqual(sane_geometry("800x900-100+10", *self.SCREEN), "800x900-100+10")
+
+
+class PositionTest(unittest.TestCase):
+    """Место оверлея: окно без рамки должно целиком помещаться на экране."""
+
+    SCREEN = (1920, 1080, 340, 560)
+
+    def test_fits(self):
+        self.assertEqual(sane_position("+1500+100", *self.SCREEN), "+1500+100")
+
+    def test_off_screen_or_broken(self):
+        for value in ("+1700+100", "+100+600", "-10+100", "+100-5", "junk", "", None, 42):
+            self.assertIsNone(sane_position(value, *self.SCREEN), repr(value))
 
 
 if __name__ == "__main__":
