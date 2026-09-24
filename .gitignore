@@ -20,3 +20,6 @@ dota_config.json
 *.swp
 Thumbs.db
 desktop.ini
+
+# Записка для передачи контекста — локальная, в репозиторий не идёт
+handoff.md
