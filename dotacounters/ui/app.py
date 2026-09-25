@@ -16,11 +16,14 @@ from ..dotabuff import (
     DEFAULT_LIMIT, MAX_LIMIT, DotabuffError, FetchError, HeroNotFound,
     ParseError, fetch_counters, fetch_many,
 )
-from ..draft import MAX_ENEMIES, analyse
-from ..heroes import suggest
-from ..hotkey import DEFAULT_HOTKEY, GlobalHotkey, format_hotkey, parse_hotkey
+from ..draft import GROUPS, DraftBoard, analyse
+from ..heroes import best_match, resolve
+from ..hotkey import (
+    DEFAULT_HOTKEY, HOTKEY_PRESETS, GlobalHotkey, format_hotkey, parse_hotkey,
+)
 from ..i18n import I18N
 from ..icons import HERO_ICON_BOX, load_icon
+from ..net import create_scraper
 from ..recent import (
     MAX_FAVOURITES, MAX_HISTORY, clean_list, is_favourite, remember,
     sane_geometry, toggle_favourite,
@@ -30,6 +33,7 @@ from ..themes import THEMES
 from ..version import APP_VERSION
 from .hero_browser import HeroBrowserModal
 from .overlay import Overlay
+from .role_menu import role_menu
 from .patch_notes import PatchNotesModal
 from .suggestions import HeroSuggestions
 from .winapi import set_title_bar_color
@@ -48,8 +52,9 @@ class DotaApp:
         self._theme_key = cfg.get("theme", "cyber")
         self._lang      = cfg.get("lang",  "en")
         self._limit     = self._clamp_limit(cfg.get("limit", DEFAULT_LIMIT))
-        self._history   = clean_list(cfg.get("history"), MAX_HISTORY)
-        self._favourites = clean_list(cfg.get("favourites"), MAX_FAVOURITES)
+        # Старые имена из прежних версий («Pango») приводятся к нынешним
+        self._history   = clean_list(self._known_names(cfg.get("history")), MAX_HISTORY)
+        self._favourites = clean_list(self._known_names(cfg.get("favourites")), MAX_FAVOURITES)
         self.T          = THEMES[self._theme_key]
         self.tr         = I18N[self._lang]
 
@@ -57,10 +62,15 @@ class DotaApp:
         self._placeholder_active = False
         self._patch_version    = "…"
         self._active_tab       = "search"   # search | draft | settings | updates
-        self._enemies          = []         # вражеский состав для драфта
+        # Состав драфта — общий для вкладки и оверлея
+        self._board            = DraftBoard()
+        self._draft_group      = "enemies"  # куда пойдёт набранный герой
+        self._draft_scraper    = None       # одна сессия на все запросы драфта
+        self._draft_lock       = threading.Lock()
         self._update           = None       # dotacounters.updates.Update, когда есть
         self._update_btn       = None
         self._update_status    = None
+        self._hotkey_note      = None       # (текст, цвет) после смены клавиши
         updates.cleanup_old()               # хвост от прошлого обновления
 
         # Оверлей и его клавиша живут всё время работы программы, а не
@@ -70,7 +80,8 @@ class DotaApp:
                                 hotkey_label=format_hotkey(self._hotkey_text),
                                 position=cfg.get("overlay_pos"),
                                 on_move=lambda pos: update_config(overlay_pos=pos),
-                                on_search=self._remember_hero)
+                                on_search=self._remember_hero,
+                                board=self._board, on_draft_change=self._draft_changed)
         self._hotkey = GlobalHotkey(self._hotkey_text,
                                     lambda: self.root.after(0, self._overlay.toggle))
         self._hotkey_ok = self._hotkey.start()
@@ -393,6 +404,12 @@ class DotaApp:
                   command=self._overlay_button).pack(side=tk.RIGHT)
 
     @staticmethod
+    def _known_names(values):
+        if not isinstance(values, list):
+            return values
+        return [resolve(v) if isinstance(v, str) else v for v in values]
+
+    @staticmethod
     def _hotkey_setting(value):
         """Клавиша из конфига, если она разбирается; иначе стандартная."""
         try:
@@ -585,8 +602,24 @@ class DotaApp:
         card.grid(row=0, column=0, sticky="ew", pady=(0, 10))
         inner = tk.Frame(card, bg=T["BG_CARD"])
         inner.pack(fill=tk.X, padx=14, pady=12)
-        tk.Label(inner, text=tr["draft_label"], font=self.font_label,
-                 fg=T["TEXT_DIM"], bg=T["BG_CARD"]).pack(anchor="w", pady=(0, 4))
+
+        # Куда пойдёт набранный герой — к врагам, союзникам или в баны — и роль
+        top = tk.Frame(inner, bg=T["BG_CARD"])
+        top.pack(fill=tk.X, pady=(0, 8))
+        tk.Label(top, text=tr["draft_label"], font=("Courier New", 9, "bold"),
+                 fg=T["TEXT_DIM"], bg=T["BG_CARD"]).pack(side=tk.LEFT, padx=(0, 8))
+        self._group_btns = {}
+        for group in GROUPS:
+            btn = tk.Button(top, text=tr["draft_group_" + group], font=("Courier New", 9, "bold"),
+                            relief="flat", bd=0, padx=10, pady=3, cursor="hand2",
+                            command=lambda g=group: self._set_draft_group(g))
+            btn.pack(side=tk.LEFT, padx=(0, 4))
+            self._group_btns[group] = btn
+        self._draft_role_menu = role_menu(top, T, tr, self._board.role, self._set_draft_role)
+        self._draft_role_menu.pack(side=tk.RIGHT)
+        tk.Label(top, text=tr["role_label"], font=("Courier New", 9, "bold"),
+                 fg=T["TEXT_DIM"], bg=T["BG_CARD"]).pack(side=tk.RIGHT, padx=(0, 6))
+        self._set_draft_group(self._draft_group)
 
         row = tk.Frame(inner, bg=T["BG_CARD"])
         row.pack(fill=tk.X)
@@ -600,7 +633,7 @@ class DotaApp:
                                     relief="flat", bd=6, highlightthickness=0)
         self.draft_entry.pack(fill=tk.X)
         self._draft_suggest = HeroSuggestions(
-            page, self.draft_entry, T, self.font_entry, on_accept=self._add_enemy)
+            page, self.draft_entry, T, self.font_entry, on_accept=self._add_draft_hero)
         self.draft_entry.bind("<FocusOut>", lambda e: self._draft_suggest.hide_later())
 
         self._draft_browse_btn = tk.Button(
@@ -609,7 +642,7 @@ class DotaApp:
             activebackground=T["GLOW"], activeforeground=T["ACCENT"],
             relief="flat", bd=0, padx=12, pady=8, cursor="hand2",
             highlightbackground=T["BORDER"], highlightthickness=1,
-            command=lambda: HeroBrowserModal(self.root, T, tr, on_select=self._add_enemy))
+            command=lambda: HeroBrowserModal(self.root, T, tr, on_select=self._add_draft_hero))
         self._draft_browse_btn.pack(side=tk.LEFT, padx=(0, 10))
 
         self._draft_btn = tk.Button(row, text=tr["draft_btn"], font=self.font_btn,
@@ -619,7 +652,7 @@ class DotaApp:
                                     cursor="hand2", command=self.start_draft)
         self._draft_btn.pack(side=tk.LEFT)
 
-        # Выбранные враги — по «фишке» на каждого, с крестиком
+        # Состав — строка на каждый список, по «фишке» на героя, с крестиком
         self._draft_chips = tk.Frame(inner, bg=T["BG_CARD"])
         self._draft_chips.pack(fill=tk.X, pady=(10, 0))
 
@@ -628,7 +661,7 @@ class DotaApp:
         self._draft_status = tk.Label(bar, text=tr["draft_hint"], font=self.font_status,
                                       fg=T["TEXT_DIM"], bg=T["BG_DARK"])
         self._draft_status.pack(side=tk.LEFT)
-        self._draft_bar = bar   # кнопку копирования добавим, когда появится вывод
+        self._draft_bar = bar
 
         wrap = tk.Frame(page, bg=T["BG_DARK"])
         wrap.grid(row=2, column=0, sticky="nsew", pady=(0, 8))
@@ -665,95 +698,174 @@ class DotaApp:
                                    font=("Courier New", 12, "bold"))
 
         self._render_chips()
+        self._render_draft()   # после смены темы — показать уже собранный состав
+
+    def _set_draft_group(self, group):
+        """Выбрать список, в который пойдёт следующий набранный герой."""
+        T = self.T
+        self._draft_group = group
+        for key, btn in self._group_btns.items():
+            active = key == group
+            btn.config(bg=T["ACCENT"] if active else T["BG_PANEL"],
+                       fg=T["BG_DARK"] if active else T["TEXT_DIM"],
+                       activebackground=T["ACCENT"], activeforeground=T["BG_DARK"])
+
+    def _set_draft_role(self, role):
+        self._board.role = role
+        self._draft_changed()
 
     def _render_chips(self):
-        """Перерисовать список выбранных врагов."""
+        """Перерисовать состав: враги всегда, союзники и баны — если есть."""
         T, tr = self.T, self.tr
         for w in self._draft_chips.winfo_children():
             w.destroy()
-        if not self._enemies:
-            tk.Label(self._draft_chips, text=tr["draft_empty"], font=("Courier New", 9),
-                     fg=T["TEXT_MUTED"], bg=T["BG_CARD"]).pack(side=tk.LEFT)
-            return
-        for hero in self._enemies:
-            chip = tk.Frame(self._draft_chips, bg=T["BG_PANEL"],
-                            highlightbackground=T["BORDER"], highlightthickness=1)
-            chip.pack(side=tk.LEFT, padx=(0, 6))
-            tk.Label(chip, text=hero, font=("Courier New", 10),
-                     fg=T["ACCENT3"], bg=T["BG_PANEL"]).pack(side=tk.LEFT, padx=(8, 4), pady=3)
-            close = tk.Button(chip, text="✕", font=("Courier New", 9, "bold"),
-                              bg=T["BG_PANEL"], fg=T["TEXT_DIM"],
-                              activebackground=T["BG_PANEL"], activeforeground=T["ACCENT2"],
-                              relief="flat", bd=0, cursor="hand2",
-                              command=lambda h=hero: self._remove_enemy(h))
-            close.pack(side=tk.LEFT, padx=(0, 6))
+        self._draft_role_menu.show_role(self._board.role)  # роль могли сменить в оверлее
+        colours = {"enemies": T["ACCENT3"], "allies": T["ACCENT"], "bans": T["TEXT_DIM"]}
+        for group in GROUPS:
+            heroes = self._board.groups[group]
+            if not heroes and group != "enemies":
+                continue
+            line = tk.Frame(self._draft_chips, bg=T["BG_CARD"])
+            line.pack(fill=tk.X, pady=(0, 4))
+            tk.Label(line, text=tr["draft_row_" + group] + ":", font=("Courier New", 8),
+                     width=10, anchor="w", fg=T["TEXT_MUTED"], bg=T["BG_CARD"]).pack(side=tk.LEFT)
+            if not heroes:
+                tk.Label(line, text=tr["draft_empty"], font=("Courier New", 9),
+                         fg=T["TEXT_MUTED"], bg=T["BG_CARD"]).pack(side=tk.LEFT)
+                continue
+            for hero in heroes:
+                chip = tk.Frame(line, bg=T["BG_PANEL"],
+                                highlightbackground=T["BORDER"], highlightthickness=1)
+                chip.pack(side=tk.LEFT, padx=(0, 6))
+                font = ("Courier New", 10, "overstrike") if group == "bans" else ("Courier New", 10)
+                tk.Label(chip, text=hero, font=font, fg=colours[group],
+                         bg=T["BG_PANEL"]).pack(side=tk.LEFT, padx=(8, 4), pady=3)
+                tk.Button(chip, text="✕", font=("Courier New", 9, "bold"),
+                          bg=T["BG_PANEL"], fg=T["TEXT_DIM"],
+                          activebackground=T["BG_PANEL"], activeforeground=T["ACCENT2"],
+                          relief="flat", bd=0, cursor="hand2",
+                          command=lambda h=hero: self._remove_draft_hero(h)).pack(
+                              side=tk.LEFT, padx=(0, 6))
 
-    def _add_enemy(self, hero):
-        """Добавить врага: имя приводится к известному герою, дубли отбрасываются."""
-        matches = suggest(hero, limit=1)
-        name = matches[0] if matches else hero.strip()
+    def _add_draft_hero(self, hero):
+        """Добавить героя в выбранный список: имя приводится к известному герою."""
+        name = best_match(hero)
         self.draft_entry.delete(0, tk.END)
         if not name:
             return
-        if name in self._enemies:
-            self._draft_status.config(text=self.tr["draft_dup"].format(hero=name),
-                                      fg=self.T["TEXT_DIM"])
-            return
-        if len(self._enemies) >= MAX_ENEMIES:
-            self._draft_status.config(text=self.tr["draft_full"].format(max=MAX_ENEMIES),
-                                      fg=self.T["ACCENT2"])
-            return
-        self._enemies.append(name)
-        self._render_chips()
-        self._draft_status.config(text=self.tr["draft_hint"], fg=self.T["TEXT_DIM"])
+        tr, T, group = self.tr, self.T, self._draft_group
+        outcome = self._board.add(group, name)
+        if outcome == "dup":
+            self._draft_status.config(text=tr["draft_dup"].format(hero=name), fg=T["TEXT_DIM"])
+        elif outcome == "full":
+            self._draft_status.config(
+                text=tr["draft_full_group"].format(max=self._board.limit_of(group)),
+                fg=T["ACCENT2"])
+        elif outcome == "moved":
+            self._draft_status.config(
+                text=tr["draft_moved"].format(hero=name, group=tr["draft_row_" + group]),
+                fg=T["ACCENT3"])
+        else:
+            self._draft_status.config(text=tr["draft_hint"], fg=T["TEXT_DIM"])
+        if outcome in ("added", "moved"):
+            self._draft_changed()
         self._switch_tab("draft")
 
-    def _remove_enemy(self, hero):
-        if hero in self._enemies:
-            self._enemies.remove(hero)
+    def _remove_draft_hero(self, hero):
+        self._board.remove(hero)
+        self._draft_changed()
+
+    def _draft_changed(self):
+        """Состав изменился — во вкладке или в оверлее: докачать и перерисовать всё."""
+        self._fetch_enemies()
+        try:
             self._render_chips()
+            self._render_draft()
+        except tk.TclError:
+            pass  # вкладку как раз пересобирают
+        self._overlay.refresh()
 
     def start_draft(self):
-        if not self._enemies:
+        """Кнопка «Подобрать»: повторить не загрузившиеся страницы и пересчитать."""
+        if not self._board.enemies:
             self._draft_status.config(text=self.tr["draft_empty"], fg=self.T["ACCENT2"])
             return
-        tr = self.tr
-        self._draft_btn.config(state=tk.DISABLED, text=tr["draft_working"])
-        self._draft_status.config(text=tr["status_scanning"], fg=self.T["ACCENT3"])
-        self.draft_area.config(state=tk.NORMAL)
-        self.draft_area.delete(1.0, tk.END)
-        self.draft_area.insert(tk.END, tr["loading_msg"], "dim")
-        self.draft_area.config(state=tk.DISABLED)
-        threading.Thread(target=self._bg_draft, args=(list(self._enemies),),
-                         daemon=True).start()
+        self._fetch_enemies(retry=True)
+        self._render_draft()
 
-    def _bg_draft(self, enemies):
-        """Страница на каждого врага, затем сложение матчапов."""
-        reports, failed = fetch_many(enemies, limit=self._limit)
-        result = analyse(reports, limit=self._limit) if reports else None
-        self.root.after(0, self._apply_draft, result, failed)
+    def _fetch_enemies(self, retry=False):
+        """Скачать страницы врагов, которых ещё нет, — в фоне."""
+        todo = self._board.missing(retry=retry)
+        if not todo:
+            return
+        board = self._board
+        board.loading.update(todo)
+        self._draft_status.config(text=self.tr["status_scanning"], fg=self.T["ACCENT3"])
+        # Снимок состава для прогрева иконок: в потоке состав не читаем
+        snapshot = (list(board.enemies), dict(board.reports),
+                    board.groups["allies"] + board.groups["bans"], board.role)
+        threading.Thread(target=self._bg_draft, args=(todo, snapshot), daemon=True).start()
 
-    def _apply_draft(self, result, failed):
-        tr, T = self.tr, self.T
+    def _bg_draft(self, heroes, snapshot):
+        """Одна сессия на все запросы драфта; по одному потоку за раз."""
+        with self._draft_lock:
+            if self._draft_scraper is None:
+                self._draft_scraper = create_scraper()
+            reports, failed = fetch_many(heroes, limit=self._limit, scraper=self._draft_scraper)
+        # Иконки будущего вывода — заранее, в фоне: иначе первый показ ждал бы сеть
+        enemies, known, exclude, role = snapshot
+        known.update(reports)
+        usable = {h: known[h] for h in enemies if h in known}
+        if usable:
+            result = analyse(usable, limit=self._limit, exclude=exclude, role=role)
+            for pick in result.picks + result.avoid:
+                if pick.icon_url:
+                    load_icon(pick.icon_url, box=HERO_ICON_BOX)
+        self.root.after(0, self._enemies_loaded, reports, failed)
+
+    def _enemies_loaded(self, reports, failed):
+        for hero, report in reports.items():
+            self._board.store(hero, report=report)
+        for hero, exc in failed:
+            self._board.store(hero, error=exc)
+        T, tr = self.T, self.tr
+        try:
+            self._draft_status.config(text=tr["status_failed"] if failed else tr["status_complete"],
+                                      fg=T["ACCENT2"] if failed else T["ACCENT"])
+            self._render_chips()
+            self._render_draft()
+        except tk.TclError:
+            pass
+        self._overlay.refresh()
+
+    def _render_draft(self):
+        """Вывод подбора по тому, что уже скачано."""
+        tr, board = self.tr, self._board
         area = self.draft_area
         area.config(state=tk.NORMAL)
         area.delete(1.0, tk.END)
         self.hero_images = []
 
-        for hero, exc in failed:
-            area.insert(tk.END, tr["draft_failed"].format(hero=hero, detail=exc), "error")
+        for hero in board.enemies:
+            if hero in board.failed:
+                area.insert(tk.END, tr["draft_failed"].format(hero=hero, detail=board.failed[hero]),
+                            "error")
+        loading = [hero for hero in board.enemies if hero in board.loading]
+        if loading:
+            area.insert(tk.END, tr["draft_missing"].format(heroes=", ".join(loading)), "dim")
+
+        result = board.analyse(limit=self._limit)
         if result and result.skipped:
             area.insert(tk.END, tr["draft_skipped"].format(
                 heroes=", ".join(result.skipped)), "error")
-
         if not result or not result.picks:
-            if not failed:
+            if result is not None:
                 area.insert(tk.END, tr["draft_nothing"], "error")
             area.config(state=tk.DISABLED)
-            self._draft_status.config(text=tr["status_failed"], fg=T["ACCENT2"])
-            self._draft_btn.config(state=tk.NORMAL, text=tr["draft_btn"])
             return
 
+        if board.role:
+            area.insert(tk.END, tr["draft_role_note"].format(role=tr["role_" + board.role]), "dim")
         rule = "  " + "─" * 46 + "\n"
         against = ", ".join(result.enemies)
         for tag, title, rows in (("good", tr["draft_best"], result.picks),
@@ -767,10 +879,7 @@ class DotaApp:
                 area.insert(tk.END, "  %+.2f%%\n" % pick.total, tag)
             area.insert(tk.END, "\n", "divider")
         area.insert(tk.END, tr["draft_footnote"], "dim")
-
         area.config(state=tk.DISABLED)
-        self._draft_status.config(text=tr["status_complete"], fg=T["ACCENT"])
-        self._draft_btn.config(state=tk.NORMAL, text=tr["draft_btn"])
 
     # ── Settings page ─────────────────────────────────────────────────────────
 
@@ -830,11 +939,30 @@ class DotaApp:
         for lkey, lbl_text in [("en", tr["set_lang_en"]), ("ru", tr["set_lang_ru"])]:
             self._make_lang_btn(lang_row, lkey, lbl_text)
 
+        # ── Клавиша оверлея ───────────────────────────────────────────────────
+        self._add_section_header(inner, 5, tr["set_hotkey_head"], tr["set_hotkey_sub"])
+        hk = tk.Frame(inner, bg=T["BG_DARK"])
+        hk.grid(row=6, column=0, sticky="ew", **pad)
+        buttons = tk.Frame(hk, bg=T["BG_DARK"])
+        buttons.pack(anchor="w")
+        choices = list(HOTKEY_PRESETS)
+        custom = not any(parse_hotkey(c) == parse_hotkey(self._hotkey_text) for c in choices)
+        if custom:
+            choices.append(self._hotkey_text)   # своя, вписанная в конфиг руками
+        for text in choices:
+            self._make_hotkey_btn(buttons, text)
+        note, colour = self._hotkey_note or ("", T["TEXT_DIM"])
+        if custom and not note:
+            note = "%s — %s" % (format_hotkey(self._hotkey_text), tr["set_hotkey_custom"])
+        self._hotkey_note = None                 # сообщение о смене — один раз
+        tk.Label(hk, text=note, font=("Courier New", 9), fg=colour,
+                 bg=T["BG_DARK"]).pack(anchor="w", pady=(6, 0))
+
         # ── ABOUT section ─────────────────────────────────────────────────────
-        self._add_section_header(inner, 5, tr["set_about_head"], "")
+        self._add_section_header(inner, 7, tr["set_about_head"], "")
         about_card = tk.Frame(inner, bg=T["BG_CARD"],
                               highlightbackground=T["BORDER"], highlightthickness=1)
-        about_card.grid(row=6, column=0, sticky="ew", **pad)
+        about_card.grid(row=8, column=0, sticky="ew", **pad)
         about_card.columnconfigure(1, weight=1)
 
         rows_info = [
@@ -861,7 +989,7 @@ class DotaApp:
         # Description
         desc_card = tk.Frame(inner, bg=T["BG_PANEL"],
                              highlightbackground=T["BORDER"], highlightthickness=1)
-        desc_card.grid(row=7, column=0, sticky="ew", padx=20, pady=(0, 24))
+        desc_card.grid(row=9, column=0, sticky="ew", padx=20, pady=(0, 24))
         tk.Label(desc_card, text=tr["set_desc"],
                  font=("Courier New", 9), fg=T["TEXT_DIM"], bg=T["BG_PANEL"],
                  justify=tk.LEFT, padx=16, pady=12).pack(anchor="w")
@@ -1014,6 +1142,40 @@ class DotaApp:
         if not is_active:
             btn.bind("<Enter>",  lambda e, b=btn: b.config(bg=T["GLOW"], fg=T["ACCENT"]))
             btn.bind("<Leave>",  lambda e, b=btn: b.config(bg=T["BG_PANEL"], fg=T["TEXT_PRIMARY"]))
+
+    def _make_hotkey_btn(self, parent, text):
+        T = self.T
+        active = parse_hotkey(text) == parse_hotkey(self._hotkey_text)
+        # Компактно: пять кнопок должны влезть и в окно минимальной ширины
+        btn = tk.Button(parent, text=format_hotkey(text), font=("Courier New", 9, "bold"),
+                        bg=T["ACCENT"] if active else T["BG_PANEL"],
+                        fg=T["BG_DARK"] if active else T["TEXT_PRIMARY"],
+                        activebackground=T["ACCENT"], activeforeground=T["BG_DARK"],
+                        relief="flat", bd=0, padx=8, pady=5, cursor="hand2",
+                        command=lambda: self._set_hotkey(text))
+        btn.pack(side=tk.LEFT, padx=(0, 6))
+
+    def _set_hotkey(self, text):
+        """Сменить клавишу оверлея. Занятую другой программой не берём — остаётся прежняя."""
+        if parse_hotkey(text) == parse_hotkey(self._hotkey_text):
+            return
+        tr, old = self.tr, self._hotkey_text
+        toggle = lambda: self.root.after(0, self._overlay.toggle)  # noqa: E731
+        self._hotkey.stop()
+        new = GlobalHotkey(text, toggle)
+        if new.start():
+            self._hotkey, self._hotkey_text, self._hotkey_ok = new, text, True
+            update_config(overlay_hotkey=text)
+            self._hotkey_note = (tr["set_hotkey_ok"].format(key=format_hotkey(text)),
+                                 self.T["ACCENT"])
+        else:
+            self._hotkey = GlobalHotkey(old, toggle)
+            self._hotkey_ok = self._hotkey.start()
+            self._hotkey_note = (tr["set_hotkey_busy"].format(key=format_hotkey(text),
+                                                              old=format_hotkey(old)),
+                                 self.T["ACCENT2"])
+        self._overlay.hotkey_label = format_hotkey(self._hotkey_text)
+        self._rebuild()   # подпись у кнопки оверлея, кнопки здесь, подвал оверлея
 
     # ── Theme / lang switching ────────────────────────────────────────────────
 
@@ -1242,8 +1404,7 @@ class DotaApp:
         typed = self.hero_entry.get().strip()
         if not typed:
             return ""
-        matches = suggest(typed, limit=1)
-        return matches[0] if matches else typed
+        return best_match(typed)
 
     def _toggle_favourite(self):
         hero = self._current_hero()
@@ -1269,9 +1430,16 @@ class DotaApp:
     # ── Поиск ─────────────────────────────────────────────────────────────────
 
     def start_search(self):
-        hero = self.hero_entry.get()
-        if not hero or self._placeholder_active:
+        typed = self.hero_entry.get()
+        if not typed.strip() or self._placeholder_active:
             return
+        # «пудж», «бара» и Enter — ищем того героя, которого показывает
+        # подсказка, и подставляем его имя в поле
+        hero = best_match(typed)
+        if hero != typed:
+            self.hero_entry.delete(0, tk.END)
+            self.hero_entry.insert(0, hero)
+            self._suggest.hide()
         tr = self.tr
         self.search_btn.config(state=tk.DISABLED, text=tr["btn_searching"])
         self._set_status(tr["status_scanning"], self.T["ACCENT3"])
@@ -1299,8 +1467,7 @@ class DotaApp:
             self._render_error(hero, outcome)
         else:
             self._render_report(outcome)
-            matches = suggest(hero, limit=1)      # запоминаем под известным именем
-            self._remember_hero(matches[0] if matches else hero.strip())
+            self._remember_hero(hero)
         self.result_area.config(state=tk.DISABLED)
         try:
             self.search_btn.config(state=tk.NORMAL, text=self.tr["btn_search"])

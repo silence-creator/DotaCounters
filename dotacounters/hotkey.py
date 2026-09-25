@@ -13,6 +13,9 @@ import sys
 import threading
 
 DEFAULT_HOTKEY = "ctrl+shift+d"
+#: Варианты в настройках. Alt+Shift нет: в Windows это переключение раскладки.
+HOTKEY_PRESETS = ("ctrl+shift+d", "ctrl+shift+f", "ctrl+alt+d", "ctrl+shift+x",
+                  "ctrl+alt+space")
 
 MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN = 0x1, 0x2, 0x4, 0x8
 #: Не повторять срабатывание, пока клавиша зажата.
@@ -88,10 +91,16 @@ class GlobalHotkey:
         self._ready.wait(timeout)
         return self._ok
 
-    def stop(self) -> None:
+    def stop(self, timeout: float = 1.0) -> None:
+        """Освободить клавишу и дождаться этого — иначе новая регистрация той же
+        комбинации сразу после смены клавиши наткнулась бы на старую."""
         if self._thread_id is not None:
             import ctypes
             ctypes.windll.user32.PostThreadMessageW(self._thread_id, WM_QUIT, 0, 0)
+            self._thread_id = None
+        if self._thread is not None:
+            self._thread.join(timeout)
+            self._thread = None
 
     def _run(self):
         import ctypes

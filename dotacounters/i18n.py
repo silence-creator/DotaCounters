@@ -52,10 +52,30 @@ I18N = {
         "copy_empty":        "Nothing to copy yet",
         # Драфт
         "tab_draft":         "DRAFT",
-        "draft_label":       "ENEMY HEROES",
+        "draft_label":       "ADD TO",
+        "draft_group_enemies": "ENEMIES",
+        "draft_group_allies":  "ALLIES",
+        "draft_group_bans":    "BANS",
+        "draft_row_enemies": "Enemies",
+        "draft_row_allies":  "Allies",
+        "draft_row_bans":    "Bans",
+        "draft_moved":       "{hero} moved: {group}",
+        "draft_full_group":  "No more than {max} here",
+        "draft_missing":     "  ⟳  Loading: {heroes}\n",
+        "draft_role_note":   "  Only heroes with the role: {role}\n",
+        "role_label":        "ROLE",
+        "role_any":          "Any",
+        "role_carry":        "Carry",
+        "role_support":      "Support",
+        "role_initiator":    "Initiator",
+        "role_disabler":     "Disabler",
+        "role_nuker":        "Nuker",
+        "role_durable":      "Durable",
+        "role_escape":       "Escape",
+        "role_pusher":       "Pusher",
         "draft_btn":         "⟩  SUGGEST",
         "draft_working":     "  WORKING…",
-        "draft_hint":        "Add up to 5 enemy heroes, then press SUGGEST",
+        "draft_hint":        "Add the enemies — and allies and bans if you like — then press SUGGEST",
         "draft_empty":       "No enemy heroes added yet",
         "draft_dup":         "{hero} is already on the list",
         "draft_full":        "Up to {max} enemy heroes",
@@ -71,7 +91,7 @@ I18N = {
         "ov_counters":       "COUNTERS",
         "ov_draft":          "DRAFT",
         "ov_hint_counters":  "Hero name, then Enter",
-        "ov_hint_draft":     "Enemy hero, then Enter",
+        "ov_hint_draft":     "Hero, then Enter — into the chosen list",
         "ov_draft_empty":    "Add enemy heroes as they are picked",
         "ov_clear":          "CLEAR",
         "ov_loading":        "Loading…",
@@ -83,6 +103,14 @@ I18N = {
         "ov_pick":           "PICK",
         "ov_avoid":          "AVOID",
         "ov_footer":         "{key} — show / hide  ·  Esc — hide",
+        "ov_group_enemies":  "ENEMY",
+        "ov_group_allies":   "ALLY",
+        "ov_group_bans":     "BAN",
+        "set_hotkey_head":   "OVERLAY",
+        "set_hotkey_sub":    "Hotkey that shows and hides it",
+        "set_hotkey_busy":   "{key} is taken by another program — {old} kept",
+        "set_hotkey_ok":     "Overlay hotkey: {key}",
+        "set_hotkey_custom": "custom, from dota_config.json",
         # Hero browser
         "hb_title":          "HERO BROWSER",
         "hb_sorted":         "heroes  ·  sorted A → Z",
@@ -142,7 +170,15 @@ I18N = {
         "upd_subtitle":      "Program update history",
         # История изменений: номера в записях — прошлое, поэтому зашиты явно.
         # Верхняя запись обязана совпадать с APP_VERSION — это проверяет тест.
-        "upd_text":          "v1.6\n"
+        "upd_text":          "v1.7\n"
+                             "Draft: besides the enemies you can add your allies and bans — they drop out of the suggestions. A hero added to another list moves there.\n"
+                             "Draft: a role filter — Carry, Support, Initiator and others, as Valve tags the heroes.\n"
+                             "The draft is shared by the Draft tab and the overlay, and enemy pages load as soon as a hero is added; SUGGEST retries the ones that failed.\n"
+                             "Nicknames work: \"sf\", \"бара\", \"шейкер\", \"войд\", \"карл\" and more. Typing a name and pressing Enter now searches the hero the suggestion shows — \"пудж\" used to give \"hero not found\".\n"
+                             "Pangolier and Windranger can be found again — the list had them as Pango and Wind Ranger, which Dotabuff does not know. Largo is added.\n"
+                             "Settings: the overlay hotkey can be picked from several combinations.\n"
+                             "\n"
+                             "v1.6\n"
                              "Overlay: a narrow window on top of the game. Ctrl+Shift+D shows it and puts the cursor in the field even while the game is active; pressing it again or Esc hides it. The OVERLAY button next to the tabs does the same.\n"
                              "The overlay has two modes. Counters: type a hero and press Enter. Draft: add enemy heroes one by one as they are picked, and the picks are recalculated at once; a click on an enemy removes it.\n"
                              "The overlay can be dragged by its top bar and remembers where it was left. It works with Dota in windowed or borderless mode, not in exclusive fullscreen.\n"
@@ -228,10 +264,30 @@ I18N = {
         "copy_empty":        "Копировать пока нечего",
         # Драфт
         "tab_draft":         "ДРАФТ",
-        "draft_label":       "ГЕРОИ ПРОТИВНИКА",
+        "draft_label":       "ДОБАВИТЬ В",
+        "draft_group_enemies": "ВРАГИ",
+        "draft_group_allies":  "СОЮЗНИКИ",
+        "draft_group_bans":    "БАНЫ",
+        "draft_row_enemies": "Враги",
+        "draft_row_allies":  "Союзники",
+        "draft_row_bans":    "Баны",
+        "draft_moved":       "{hero} перенесён: {group}",
+        "draft_full_group":  "Здесь не больше {max}",
+        "draft_missing":     "  ⟳  Загружаются: {heroes}\n",
+        "draft_role_note":   "  Только герои с ролью: {role}\n",
+        "role_label":        "РОЛЬ",
+        "role_any":          "Любая",
+        "role_carry":        "Керри",
+        "role_support":      "Саппорт",
+        "role_initiator":    "Инициатор",
+        "role_disabler":     "Контроль",
+        "role_nuker":        "Нюкер",
+        "role_durable":      "Стойкий",
+        "role_escape":       "Побег",
+        "role_pusher":       "Пуш",
         "draft_btn":         "⟩  ПОДОБРАТЬ",
         "draft_working":     "  ПОДБОР…",
-        "draft_hint":        "Добавьте до 5 героев противника и нажмите ПОДОБРАТЬ",
+        "draft_hint":        "Добавьте врагов, при желании союзников и баны, и нажмите ПОДОБРАТЬ",
         "draft_empty":       "Герои противника пока не добавлены",
         "draft_dup":         "{hero} уже в списке",
         "draft_full":        "Не больше {max} героев противника",
@@ -247,7 +303,7 @@ I18N = {
         "ov_counters":       "КОНТРПИКИ",
         "ov_draft":          "ДРАФТ",
         "ov_hint_counters":  "Имя героя, затем Enter",
-        "ov_hint_draft":     "Герой врага, затем Enter",
+        "ov_hint_draft":     "Герой, затем Enter — в выбранный список",
         "ov_draft_empty":    "Добавляйте врагов по мере пиков",
         "ov_clear":          "СБРОС",
         "ov_loading":        "Загрузка…",
@@ -259,6 +315,14 @@ I18N = {
         "ov_pick":           "БРАТЬ",
         "ov_avoid":          "НЕ БРАТЬ",
         "ov_footer":         "{key} — показать / скрыть  ·  Esc — скрыть",
+        "ov_group_enemies":  "ВРАГ",
+        "ov_group_allies":   "СОЮЗ",
+        "ov_group_bans":     "БАН",
+        "set_hotkey_head":   "ОВЕРЛЕЙ",
+        "set_hotkey_sub":    "Клавиша, которая показывает и прячет его",
+        "set_hotkey_busy":   "{key} занята другой программой — оставлена {old}",
+        "set_hotkey_ok":     "Клавиша оверлея: {key}",
+        "set_hotkey_custom": "своя, из dota_config.json",
         # Hero browser
         "hb_title":          "СПИСОК ГЕРОЕВ",
         "hb_sorted":         "героев  ·  по алфавиту",
@@ -316,7 +380,15 @@ I18N = {
         "upd_error":         "Не удалось обновить: {detail}",
         "upd_title":         "ОБНОВЛЕНИЯ",
         "upd_subtitle":      "История обновлений программы",
-        "upd_text":          "v1.6\n"
+        "upd_text":          "v1.7\n"
+                             "Драфт: кроме врагов можно добавить своих союзников и баны — они исчезают из подсказок. Герой, добавленный в другой список, переносится туда.\n"
+                             "Драфт: фильтр по роли — керри, саппорт, инициатор и другие, по разметке Valve.\n"
+                             "Состав драфта общий для вкладки и оверлея, а страницы врагов загружаются сразу при добавлении; «Подобрать» повторяет те, что не загрузились.\n"
+                             "Работают прозвища: «sf», «бара», «шейкер», «войд», «карл» и другие. Набранное имя с Enter теперь ищет того героя, что показывает подсказка, — раньше «пудж» давал «герой не найден».\n"
+                             "Снова находятся Pangolier и Windranger — в списке они были записаны как Pango и Wind Ranger, и Dotabuff их не знал. Добавлен Largo.\n"
+                             "Настройки: клавишу оверлея можно выбрать из нескольких сочетаний.\n"
+                             "\n"
+                             "v1.6\n"
                              "Оверлей — узкое окно поверх игры. Ctrl+Shift+D показывает его и ставит курсор в поле ввода, даже когда активна игра; повторное нажатие или Esc прячет. То же делает кнопка «ОВЕРЛЕЙ» рядом с вкладками.\n"
                              "В оверлее два режима. Контрпики: набрали героя — Enter. Драфт: добавляйте героев противника по одному, по мере пиков, и подбор пересчитывается сразу; щелчок по врагу убирает его.\n"
                              "Оверлей перетаскивается за верхнюю полосу и запоминает, где его оставили. Работает, когда Dota запущена в окне или в окне без рамки; в полноэкранном исключительном режиме — нет.\n"

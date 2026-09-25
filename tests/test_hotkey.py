@@ -10,7 +10,8 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotacounters.hotkey import (  # noqa: E402
-    DEFAULT_HOTKEY, MOD_ALT, MOD_CONTROL, MOD_SHIFT, format_hotkey, parse_hotkey,
+    DEFAULT_HOTKEY, HOTKEY_PRESETS, MOD_ALT, MOD_CONTROL, MOD_SHIFT, format_hotkey,
+    parse_hotkey,
 )
 
 
@@ -35,6 +36,19 @@ class ParseTest(unittest.TestCase):
         """Иначе буква перестала бы печататься во всех программах."""
         with self.assertRaises(ValueError):
             parse_hotkey("d")
+
+
+class PresetsTest(unittest.TestCase):
+    def test_presets_parse_and_differ(self):
+        parsed = [parse_hotkey(text) for text in HOTKEY_PRESETS]
+        self.assertEqual(len(set(parsed)), len(parsed))
+        self.assertIn(DEFAULT_HOTKEY, HOTKEY_PRESETS)
+
+    def test_no_layout_switch_combo(self):
+        """Alt+Shift в Windows переключает раскладку."""
+        for text in HOTKEY_PRESETS:
+            mods, _ = parse_hotkey(text)
+            self.assertNotEqual(mods & (MOD_ALT | MOD_SHIFT), MOD_ALT | MOD_SHIFT, text)
 
 
 class FormatTest(unittest.TestCase):

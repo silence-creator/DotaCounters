@@ -6,35 +6,39 @@
 Окно без рамки: перетаскивается за шапку, Esc прячет. Показывается и
 прячется глобальной клавишей (hotkey.py) или кнопкой в главном окне.
 
-В драфте враги добавляются по одному, по мере пиков, и подбор пересчитывается
-сразу. Страница каждого врага качается один раз: при следующем добавлении
-складываются уже скачанные таблицы.
+Состав драфта общий с вкладкой «Драфт» главного окна (draft.DraftBoard):
+героя, добавленного здесь, видно там, и наоборот. Страницы врагов качает
+главное окно — оверлей только сообщает ему об изменении состава.
 """
 
 import threading
 import tkinter as tk
+from tkinter import font as tkfont
 
 from PIL import ImageTk
 
 from ..dotabuff import DotabuffError, FetchError, HeroNotFound, ParseError, fetch_counters
-from ..draft import MAX_ENEMIES, analyse
-from ..heroes import suggest
+from ..draft import GROUPS
+from ..heroes import best_match
 from ..icons import HERO_ICON_BOX, load_icon
 from ..net import create_scraper
 from ..recent import sane_position
+from .role_menu import role_menu
 from .suggestions import HeroSuggestions
 from .winapi import bring_to_front
 
-WIDTH, HEIGHT = 340, 560
+WIDTH, HEIGHT = 340, 600
 FONT = "Courier New"
 
 
 class Overlay:
     """Окно создаётся при первом показе и дальше только прячется."""
 
-    def __init__(self, root, theme, tr, limit, hotkey_label,
-                 position=None, on_move=None, on_search=None):
+    def __init__(self, root, theme, tr, limit, hotkey_label, board,
+                 on_draft_change, position=None, on_move=None, on_search=None):
         self.root = root
+        self.board = board                   # общий состав драфта
+        self._on_draft_change = on_draft_change  # главное окно докачает и перерисует
         self.T, self.tr = theme, tr
         self._limit = limit                  # функция: сколько строк показывать
         self.hotkey_label = hotkey_label
@@ -46,14 +50,11 @@ class Overlay:
         self.mode = "counters"               # counters | draft
         self._counters = None                # (герой, отчёт или ошибка) или None
         self._counters_loading = None        # герой, чья страница качается
-        self.enemies = []
-        self._reports = {}                   # враг -> отчёт; качается один раз
-        self._failed = {}                    # враг -> ошибка
-        self._loading = set()                # враги, чьи страницы ещё качаются
+        self._group = "enemies"              # куда пойдёт набранный в драфте герой
         self._images = []
         self._token = 0                      # отбросить устаревший ответ поиска
-        # Одна сессия на все запросы оверлея — так Cloudflare реже отбивает их.
-        # Запросы идут по одному: сессия не рассчитана на несколько потоков.
+        # Своя сессия для поиска контрпиков — так Cloudflare реже отбивает
+        # запросы. По одному за раз: сессия не рассчитана на несколько потоков.
         self._scraper = None
         self._net_lock = threading.Lock()
 
@@ -169,6 +170,23 @@ class Overlay:
                                     activebackground=T["BG_DARK"], activeforeground=T["ACCENT2"],
                                     relief="flat", bd=0, cursor="hand2", command=self._clear)
 
+        # Драфт: куда пойдёт герой и роль. Контейнер упакован всегда, а строка в
+        # нём — только в режиме драфта: иначе pack поставил бы её в самый конец.
+        box = tk.Frame(body, bg=T["BG_DARK"])
+        box.pack(fill=tk.X, padx=10)
+        self._draft_row = tk.Frame(box, bg=T["BG_DARK"])
+        self._group_btns = {}
+        for group in GROUPS:
+            btn = tk.Button(self._draft_row, text=tr["ov_group_" + group], font=(FONT, 8, "bold"),
+                            relief="flat", bd=0, padx=8, pady=2, cursor="hand2",
+                            command=lambda g=group: self._set_group(g))
+            btn.pack(side=tk.LEFT, padx=(0, 4))
+            self._group_btns[group] = btn
+        self._role_menu = role_menu(self._draft_row, T, tr, self.board.role, self._set_role,
+                                    font=(FONT, 8, "bold"))
+        self._role_menu.pack(side=tk.RIGHT)
+        self._set_group(self._group, focus=False)   # поля ввода ещё нет
+
         self._hint = tk.Label(body, text="", font=(FONT, 8), fg=T["TEXT_DIM"], bg=T["BG_DARK"])
         self._hint.pack(anchor="w", padx=10)
 
@@ -206,6 +224,9 @@ class Overlay:
         for tag in ("bad", "good", "title"):
             self.area.tag_config(tag, font=(FONT, 10, "bold"))
         self.area.tag_config("enemy", background=T["BG_PANEL"])
+        self.area.tag_config("ally", foreground=T["ACCENT"], background=T["BG_PANEL"])
+        self.area.tag_config("ban", foreground=T["TEXT_DIM"], background=T["BG_PANEL"],
+                             overstrike=True)
 
         self._set_mode(self.mode)
 
@@ -248,8 +269,10 @@ class Overlay:
                        activebackground=T["ACCENT"], activeforeground=T["BG_DARK"])
         if mode == "draft":
             self._clear_btn.pack(side=tk.RIGHT)
+            self._draft_row.pack(fill=tk.X, pady=(0, 6))
         else:
             self._clear_btn.pack_forget()
+            self._draft_row.pack_forget()
         self._hint.config(text=self.tr["ov_hint_draft" if mode == "draft" else "ov_hint_counters"])
         self._set_status("")
         self._render()
@@ -257,13 +280,12 @@ class Overlay:
             self.entry.focus_set()
 
     def _accept(self, typed):
-        matches = suggest(typed, limit=1)
-        hero = matches[0] if matches else typed.strip()
+        hero = best_match(typed)
         self.entry.delete(0, tk.END)
         if not hero:
             return
         if self.mode == "draft":
-            self._add_enemy(hero)
+            self._add_to_board(hero)
         else:
             self._search(hero)
 
@@ -271,10 +293,32 @@ class Overlay:
         if self._alive():
             self._status.config(text=text, fg=colour or self.T["TEXT_DIM"])
 
+    def _set_group(self, group, focus=True):
+        T = self.T
+        self._group = group
+        for key, btn in self._group_btns.items():
+            active = key == group
+            btn.config(bg=T["ACCENT3"] if active else T["BG_PANEL"],
+                       fg=T["BG_DARK"] if active else T["TEXT_DIM"],
+                       activebackground=T["ACCENT3"], activeforeground=T["BG_DARK"])
+        if focus and self.visible:
+            self.entry.focus_set()
+
+    def _set_role(self, role):
+        self.board.role = role
+        self._on_draft_change()
+
     def _clear(self):
-        self.enemies = []
+        self.board.clear()
         self._set_status("")
-        self._render()
+        self._on_draft_change()
+
+    def refresh(self):
+        """Состав или загрузка изменились — перерисовать, если окно есть."""
+        if self._alive():
+            self._role_menu.show_role(self.board.role)
+            if self.mode == "draft":
+                self._render()
 
     # ── Сеть ──────────────────────────────────────────────────────────────────
 
@@ -321,46 +365,26 @@ class Overlay:
             self._on_search(hero)
         self._render()
 
-    def _add_enemy(self, hero):
-        tr = self.tr
-        if any(e.lower() == hero.lower() for e in self.enemies):
+    def _add_to_board(self, hero):
+        """Герой — в выбранный список общего состава. Страницу докачает главное окно."""
+        tr, T, group = self.tr, self.T, self._group
+        outcome = self.board.add(group, hero)
+        if outcome == "dup":
             self._set_status(tr["draft_dup"].format(hero=hero))
-            return
-        if len(self.enemies) >= MAX_ENEMIES:
-            self._set_status(tr["draft_full"].format(max=MAX_ENEMIES), self.T["ACCENT2"])
-            return
-        self.enemies.append(hero)
-        self._set_status("")
-        if hero in self._reports:
-            self._render()
-            return
-        self._failed.pop(hero, None)
-        self._loading.add(hero)
-        self._render()
-        # Снимок в главном потоке: словарь пополняется только здесь
-        known = {e: r for e, r in self._reports.items() if e in self.enemies}
-
-        def work():
-            outcome = self._fetch(hero)
-            if not isinstance(outcome, DotabuffError):
-                reports = dict(known, **{hero: outcome})
-                result = analyse(reports, limit=self._limit())
-                self._warm_icons(result.picks + result.avoid)
-            self.root.after(0, self._enemy_loaded, hero, outcome)
-        threading.Thread(target=work, daemon=True).start()
-
-    def _enemy_loaded(self, hero, outcome):
-        self._loading.discard(hero)
-        if isinstance(outcome, DotabuffError):
-            self._failed[hero] = outcome
+        elif outcome == "full":
+            self._set_status(tr["draft_full_group"].format(max=self.board.limit_of(group)),
+                             T["ACCENT2"])
+        elif outcome == "moved":
+            self._set_status(tr["draft_moved"].format(hero=hero, group=tr["draft_row_" + group]),
+                             T["ACCENT3"])
         else:
-            self._reports[hero] = outcome
-        self._render()
+            self._set_status("")
+        if outcome in ("added", "moved"):
+            self._on_draft_change()
 
-    def _remove_enemy(self, hero):
-        if hero in self.enemies:
-            self.enemies.remove(hero)
-            self._render()
+    def _remove_from_board(self, hero):
+        self.board.remove(hero)
+        self._on_draft_change()
 
     # ── Вывод ─────────────────────────────────────────────────────────────────
 
@@ -418,32 +442,51 @@ class Overlay:
                 self._row(m.icon_url, m.hero, m.win_rate, tag)
 
     def _render_draft(self):
-        area, tr = self.area, self.tr
-        if not self.enemies:
+        area, tr, board = self.area, self.tr, self.board
+        if not any(board.groups.values()):
             area.insert(tk.END, tr["ov_draft_empty"] + "\n", "dim")
             return
 
-        # Враги — «фишки» в строку; щелчок убирает врага
-        for i, hero in enumerate(self.enemies):
-            tag = "enemy_%d" % i
-            mark = "⟳" if hero in self._loading else ("!" if hero in self._failed else "✕")
-            area.insert(tk.END, " %s %s " % (mark, hero), ("enemy", tag))
-            area.tag_bind(tag, "<Button-1>", lambda e, h=hero: self._remove_enemy(h))
-            area.tag_bind(tag, "<Enter>", lambda e: self.area.config(cursor="hand2"))
-            area.tag_bind(tag, "<Leave>", lambda e: self.area.config(cursor="arrow"))
-            area.insert(tk.END, " ")
+        # Состав — «фишки» в строку: враги, союзники, баны; щелчок убирает героя.
+        # Переносим сами, по ширине: поле переносило бы по пробелу внутри имени,
+        # и «Crystal Maiden» разваливался на две строки.
+        measure = tkfont.Font(font=(FONT, 10)).measure
+        room = area.winfo_width() - 24
+        if room < 100:
+            room = WIDTH - 44          # окно ещё не разложено — берём по размеру
+        used, n = 0, 0
+        for group, style in (("enemies", "enemy"), ("allies", "ally"), ("bans", "ban")):
+            for hero in board.groups[group]:
+                tag = "chip_%d" % n
+                n += 1
+                if hero in board.loading:
+                    mark = "⟳"
+                elif hero in board.failed:
+                    mark = "!"
+                else:
+                    mark = "✕"
+                text = " %s %s " % (mark, hero)
+                width = measure(text + " ")
+                if used and used + width > room:
+                    area.insert(tk.END, "\n")
+                    used = 0
+                used += width
+                area.insert(tk.END, text, (style, tag))
+                area.tag_bind(tag, "<Button-1>", lambda e, h=hero: self._remove_from_board(h))
+                area.tag_bind(tag, "<Enter>", lambda e: self.area.config(cursor="hand2"))
+                area.tag_bind(tag, "<Leave>", lambda e: self.area.config(cursor="arrow"))
+                area.insert(tk.END, " ")
         area.insert(tk.END, "\n")
 
-        for hero in self.enemies:
-            if hero in self._failed:
+        for hero in board.enemies:
+            if hero in board.failed:
                 area.insert(tk.END, tr["ov_failed"].format(hero=hero) + "\n", "error")
 
-        reports = {e: self._reports[e] for e in self.enemies if e in self._reports}
-        if not reports:
-            if self._loading:
+        result = board.analyse(limit=self._limit())
+        if result is None:
+            if board.loading:
                 area.insert(tk.END, "\n" + tr["ov_loading"] + "\n", "dim")
             return
-        result = analyse(reports, limit=self._limit())
         if not result.picks:
             area.insert(tk.END, "\n" + tr["ov_nothing"] + "\n", "error")
             return
@@ -452,5 +495,5 @@ class Overlay:
             area.insert(tk.END, "\n" + label + "\n", tag)
             for pick in rows:
                 self._row(pick.icon_url, pick.hero, "%+.2f%%" % pick.total, tag)
-        if self._loading:
+        if board.loading:
             area.insert(tk.END, "\n" + tr["ov_loading"] + "\n", "dim")
