@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotacounters import dotabuff  # noqa: E402
 from dotacounters.dotabuff import (  # noqa: E402
     MAX_LIMIT, CounterReport, FetchError, HeroNotFound, ParseError, fetch_many,
+    select_sections,
     hero_slug, parse_counters,
 )
 
@@ -145,6 +146,33 @@ class RetryTest(unittest.TestCase):
         self.assertEqual(scraper.calls, 1)
 
 
+class MatchesPlayedTest(unittest.TestCase):
+    """Число матчей в паре — из колонки «Matches Played» полной таблицы."""
+
+    def test_parsed_as_int(self):
+        report = parse_counters(load_fixture(), "drow-ranger")
+        mars = next(m for m in report.matchups if m.hero == "Mars")
+        self.assertEqual(mars.matches, 48459, "data-value, а не «48,459» с запятой")
+        self.assertTrue(all(isinstance(m.matches, int) and m.matches > 0
+                            for m in report.matchups))
+
+
+class RarePairsTest(unittest.TestCase):
+    def test_rare_pair_is_left_out_of_sections(self):
+        report = parse_counters(load_fixture(), "drow-ranger", limit=5)
+        report.matchups[0].matches = dotabuff.MIN_MATCHES - 1     # Mars
+        select_sections(report, 5)
+        heroes = [m.hero for m in report.countered_by]
+        self.assertNotIn("Mars", heroes)
+        self.assertEqual(heroes[0], "Earth Spirit")
+        self.assertEqual(len(heroes), 5, "место занял следующий надёжный")
+
+    def test_short_tables_are_skipped_when_full_table_is_enough(self):
+        """Полной таблицы хватает на любой выбор — короткие не разбираются."""
+        report = parse_counters(load_fixture(), "drow-ranger")
+        self.assertEqual(report.short_countered_by, [])
+
+
 class LimitTest(unittest.TestCase):
     """Выбор количества строк берёт данные из полной таблицы «Matchups»."""
 
@@ -211,7 +239,7 @@ class FetchManyTest(unittest.TestCase):
     def test_one_session_and_errors_kept_apart(self):
         sessions = []
 
-        def fetch(hero, scraper=None, limit=None):
+        def fetch(hero, scraper=None, limit=None, cache=None):
             sessions.append(scraper)
             if hero == "Nobody":
                 raise HeroNotFound(hero)

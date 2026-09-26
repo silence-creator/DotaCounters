@@ -13,9 +13,9 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from dotacounters.dotabuff import Matchup, parse_counters  # noqa: E402
+from dotacounters.dotabuff import MIN_MATCHES, Matchup, parse_counters  # noqa: E402
 from dotacounters.draft import (  # noqa: E402
-    MAX_ENEMIES, ROLE_FILTERS, DraftBoard, analyse, has_role,
+    MAX_ENEMIES, ROLE_FILTERS, DraftBoard, analyse, counters_with_role, has_role,
 )
 from dotacounters.heroes import ALL_HEROES  # noqa: E402
 from dotacounters.roles import ROLE_LEVELS, ROLE_ORDER  # noqa: E402
@@ -33,8 +33,10 @@ class FakeReport:
     """Отчёт с заданными матчапами: значение = насколько хуже играет враг."""
 
     def __init__(self, pairs):
-        self.matchups = [Matchup(hero=hero, win_rate="50.00%", advantage_value=value)
-                         for hero, value in pairs]
+        """pairs — (герой, значение) или (герой, значение, число матчей)."""
+        self.matchups = [Matchup(hero=p[0], win_rate="50.00%", advantage_value=p[1],
+                                 matches=p[2] if len(p) > 2 else None)
+                         for p in pairs]
 
 
 class AdvantageValueTest(unittest.TestCase):
@@ -157,12 +159,53 @@ class RoleFilterTest(unittest.TestCase):
         self.assertEqual([p.hero for p in result.picks], ["Crystal Maiden", "Lion"])
         self.assertEqual([p.hero for p in result.avoid], ["Lion", "Crystal Maiden"])
 
+    def test_counters_page_filtered_by_role(self):
+        report = FakeReport([("Crystal Maiden", 5.0), ("Anti-Mage", 4.0), ("Lion", 1.0),
+                             ("Spectre", -2.0), ("Witch Doctor", -3.0)])
+        weak, strong = counters_with_role(report, "support", limit=5)
+        self.assertEqual([m.hero for m in weak], ["Crystal Maiden", "Lion"])
+        self.assertEqual([m.hero for m in strong], ["Witch Doctor"],
+                         "сильнее всего — против самого отрицательного")
+
+    def test_counters_with_role_on_real_page(self):
+        """Без фильтра по «любой» роли разделы совпали бы со страницей."""
+        report = drow_report()
+        weak, strong = counters_with_role(report, "carry", limit=5)
+        self.assertTrue(weak and strong)
+        self.assertTrue(all(has_role(m.hero, "carry") for m in weak + strong))
+        self.assertTrue(all(m.advantage_value > 0 for m in weak))
+        self.assertTrue(all(m.advantage_value < 0 for m in strong))
+
+    def test_no_full_table_gives_nothing(self):
+        self.assertEqual(counters_with_role(FakeReport([]), "carry"), ([], []))
+
     def test_every_filter_role_is_known(self):
         for role in ROLE_FILTERS:
             self.assertIn(role, ROLE_ORDER)
 
     def test_every_hero_has_roles(self):
         self.assertEqual(sorted(set(ALL_HEROES) - set(ROLE_LEVELS)), [])
+
+
+class RarePairsTest(unittest.TestCase):
+    """Пары меньше MIN_MATCHES матчей — шум."""
+
+    def test_rare_pair_counts_as_zero_but_keeps_the_candidate(self):
+        reports = {"A": FakeReport([("Chen", 6.4, MIN_MATCHES - 1), ("Axe", 1.0, 50000)]),
+                   "B": FakeReport([("Chen", 1.0, 50000), ("Axe", 1.0, 50000)])}
+        result = analyse(reports, limit=5)
+        totals = {p.hero: p.total for p in result.picks}
+        self.assertAlmostEqual(totals["Chen"], 1.0, msg="6.4 из редкой пары не в счёт")
+        self.assertEqual([p.hero for p in result.picks], ["Axe", "Chen"])
+
+    def test_threshold_itself_is_enough(self):
+        reports = {"A": FakeReport([("Chen", 3.0, MIN_MATCHES)])}
+        self.assertAlmostEqual(analyse(reports).picks[0].total, 3.0)
+
+    def test_role_filter_drops_rare_pairs(self):
+        report = FakeReport([("Crystal Maiden", 5.0, 100), ("Lion", 1.0, 50000)])
+        weak, _ = counters_with_role(report, "support")
+        self.assertEqual([m.hero for m in weak], ["Lion"])
 
 
 class DraftBoardTest(unittest.TestCase):

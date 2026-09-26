@@ -1,0 +1,36 @@
+# Тесты и pyflakes на каждый пуш и пулл-реквест.
+#
+# Windows — как у пользователей: горячая клавиша и WinAPI живут только там.
+# Python 3.11 — тот же, на котором собирается .exe.
+# Сеть тесты не трогают, поэтому поломку Dotabuff этот прогон не поймает —
+# живой запрос после правок сетевого слоя всё равно нужен.
+
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: windows-latest
+    env:
+      # unittest -v печатает русские описания тестов, а вывод в канал на
+      # Windows по умолчанию в cp1252 — без UTF-8 прогон упал бы на кириллице.
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Dependencies
+        run: python -m pip install -r requirements.txt pyflakes
+
+      - name: Pyflakes
+        run: python -m pyflakes dotacounters tests tools main.py
+
+      - name: Tests
+        run: python -m unittest discover -s tests -v

@@ -10,6 +10,7 @@
 
 from dataclasses import dataclass, field
 
+from .dotabuff import reliable
 from .roles import ROLE_LEVELS, ROLE_ORDER
 
 #: Сколько героев показывать в каждом списке по умолчанию.
@@ -31,6 +32,26 @@ def has_role(hero: str, role: str) -> bool:
     """Свойственна ли герою роль по разметке Valve. Незнакомый герой — нет."""
     levels = ROLE_LEVELS.get(hero)
     return bool(levels) and levels[ROLE_ORDER.index(role)] > 0
+
+
+def counters_with_role(report, role: str, limit: int = DEFAULT_PICKS) -> tuple:
+    """Разделы страницы контрпиков, оставив только соперников с ролью.
+
+    Короткие таблицы Dotabuff — по пять строк на всех, после фильтра там
+    почти никого не остаётся, поэтому разделы строятся из полной таблицы
+    «Matchups». Её значение — насколько хуже герой страницы играет против
+    соперника: положительное — «слабее против», отрицательное — «сильнее
+    против». Так списки не пересекаются, даже если героев с ролью мало.
+    Возвращает (слабее против, сильнее против); без полной таблицы — пустые.
+    """
+    rows = [m for m in (getattr(report, "matchups", None) or [])
+            if m.advantage_value is not None and has_role(m.hero, role) and reliable(m)]
+    limit = max(1, limit)
+    weak = sorted((m for m in rows if m.advantage_value > 0),
+                  key=lambda m: -m.advantage_value)[:limit]
+    strong = sorted((m for m in rows if m.advantage_value < 0),
+                    key=lambda m: m.advantage_value)[:limit]
+    return weak, strong
 
 
 @dataclass
@@ -81,8 +102,11 @@ def analyse(reports: dict, limit: int = DEFAULT_PICKS, exclude=(),
         for matchup in rows:
             if matchup.hero.strip().lower() in taken:
                 continue  # героя уже взяли или забанили
-            totals[matchup.hero] = totals.get(matchup.hero, 0.0) + matchup.advantage_value
-            per_enemy.setdefault(matchup.hero, {})[enemy] = matchup.advantage_value
+            # Редкая пара — шум: считаем её нейтральной, а не выбрасываем
+            # кандидата, иначе одна такая пара убрала бы героя из подсказок.
+            value = matchup.advantage_value if reliable(matchup) else 0.0
+            totals[matchup.hero] = totals.get(matchup.hero, 0.0) + value
+            per_enemy.setdefault(matchup.hero, {})[enemy] = value
             icons.setdefault(matchup.hero, matchup.icon_url)
 
     # Кандидат учитывается, только если встретился у всех учтённых врагов:

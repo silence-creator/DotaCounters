@@ -11,6 +11,10 @@ from bs4 import BeautifulSoup
 from .icons import LOCAL_ICON_PREFIX
 from .net import create_scraper
 
+#: Что показывается, когда номер патча узнать не удалось. Это не настоящий
+#: ответ — кеш страниц по нему не сверяется.
+FALLBACK_PATCH = "7.41b"
+
 
 def fetch_current_patch():
     scraper = create_scraper()
@@ -50,7 +54,7 @@ def fetch_current_patch():
                 return m.group(0)
     except Exception:
         pass
-    return "7.41b"
+    return FALLBACK_PATCH
 
 
 # ── Заметки к патчу ───────────────────────────────────────────────────────────

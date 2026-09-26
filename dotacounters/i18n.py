@@ -21,6 +21,14 @@ I18N = {
         "status_await":      "AWAITING INPUT",
         "status_scanning":   "SCANNING NETWORK…",
         "status_complete":   "ANALYSIS COMPLETE",
+        "status_cached":     "ANALYSIS COMPLETE  ·  saved {age} ago",
+        "age_min":           "{n} min",
+        "age_hours":         "{n} h",
+        "set_cache_head":    "DATA",
+        "set_cache_sub":     "Saved Dotabuff pages",
+        "set_cache_info":    "Heroes saved: {n}. A page is kept for 24 hours\nand is downloaded again after a new patch.",
+        "set_cache_clear":   "Clear",
+        "set_cache_cleared": "Removed: {n}. The next search downloads fresh pages.",
         "output_header":     "  ANALYSIS OUTPUT",
         "output_source":     "DOTABUFF.COM  ",
         "footer_hint":       "[ ENTER ] search  ·  [ ⊞ HEROES ] browse all heroes  ·  images enabled",
@@ -63,6 +71,8 @@ I18N = {
         "draft_full_group":  "No more than {max} here",
         "draft_missing":     "  ⟳  Loading: {heroes}\n",
         "draft_role_note":   "  Only heroes with the role: {role}\n",
+        "role_no_table":     "  ⚠  This page has no full matchup table, so the role filter\n"
+                             "      cannot be applied. Showing all heroes.\n\n",
         "role_label":        "ROLE",
         "role_any":          "Any",
         "role_carry":        "Carry",
@@ -84,7 +94,8 @@ I18N = {
         "draft_nothing":     "\n  ✕  Nothing to suggest: no full matchup table for these heroes.\n",
         "draft_failed":      "  ✕  {hero}: {detail}\n",
         "draft_skipped":     "  ⚠  No full matchup table for: {heroes}. They were left out.\n",
-        "draft_footnote":    "\n  Numbers add up each hero's advantage over the enemies, from Dotabuff.\n",
+        "draft_footnote":    "\n  Numbers add up each hero's advantage over the enemies, from Dotabuff.\n"
+                             "  Pairs played fewer than 2000 times count as zero — too few games.\n",
         # Оверлей поверх игры
         "ov_btn":            "⧉  OVERLAY",
         "ov_key_busy":       "{key} is taken",
@@ -170,7 +181,13 @@ I18N = {
         "upd_subtitle":      "Program update history",
         # История изменений: номера в записях — прошлое, поэтому зашиты явно.
         # Верхняя запись обязана совпадать с APP_VERSION — это проверяет тест.
-        "upd_text":          "v1.7\n"
+        "upd_text":          "v1.8\n"
+                             "Search: a role filter — for example, which supports are strongest against Pudge. Changing the role redraws the result without a new download.\n"
+                             "Rare matchups no longer mislead: pairs played fewer than 2000 times are left out of the lists, and in the draft they count as zero. These are mostly pairs with Chen, Batrider, Elder Titan, Lycan, Visage and Brewmaster.\n"
+                             "Dotabuff pages are kept for 24 hours in the cache folder next to the program: a repeated search or draft is instant, and fewer requests are turned away. After a new patch the pages are downloaded again. Settings show how many are saved and can clear them.\n"
+                             "Hero icons no longer vanish: after a search and then a draft, switching back to the Search tab left empty spaces instead of icons, and the same the other way round.\n"
+                             "\n"
+                             "v1.7\n"
                              "Draft: besides the enemies you can add your allies and bans — they drop out of the suggestions. A hero added to another list moves there.\n"
                              "Draft: a role filter — Carry, Support, Initiator and others, as Valve tags the heroes.\n"
                              "The draft is shared by the Draft tab and the overlay, and enemy pages load as soon as a hero is added; SUGGEST retries the ones that failed.\n"
@@ -233,6 +250,14 @@ I18N = {
         "status_await":      "ОЖИДАНИЕ ВВОДА",
         "status_scanning":   "СКАНИРОВАНИЕ СЕТИ…",
         "status_complete":   "АНАЛИЗ ЗАВЕРШЁН",
+        "status_cached":     "АНАЛИЗ ЗАВЕРШЁН  ·  сохранено {age} назад",
+        "age_min":           "{n} мин",
+        "age_hours":         "{n} ч",
+        "set_cache_head":    "ДАННЫЕ",
+        "set_cache_sub":     "Сохранённые страницы Dotabuff",
+        "set_cache_info":    "Сохранено героев: {n}. Страница хранится 24 часа\nи загружается заново после нового патча.",
+        "set_cache_clear":   "Очистить",
+        "set_cache_cleared": "Удалено: {n}. Следующий поиск загрузит свежие страницы.",
         "output_header":     "  ВЫВОД АНАЛИЗА",
         "output_source":     "DOTABUFF.COM  ",
         "footer_hint":       "[ ENTER ] поиск  ·  [ ⊞ ГЕРОИ ] все герои  ·  изображения включены",
@@ -275,6 +300,8 @@ I18N = {
         "draft_full_group":  "Здесь не больше {max}",
         "draft_missing":     "  ⟳  Загружаются: {heroes}\n",
         "draft_role_note":   "  Только герои с ролью: {role}\n",
+        "role_no_table":     "  ⚠  На странице нет полной таблицы матчапов — фильтр по\n"
+                             "      роли применить нельзя, показаны все герои.\n\n",
         "role_label":        "РОЛЬ",
         "role_any":          "Любая",
         "role_carry":        "Керри",
@@ -296,7 +323,8 @@ I18N = {
         "draft_nothing":     "\n  ✕  Подбирать не из чего: полной таблицы матчапов у этих героев нет.\n",
         "draft_failed":      "  ✕  {hero}: {detail}\n",
         "draft_skipped":     "  ⚠  Нет полной таблицы матчапов: {heroes}. Они не учтены.\n",
-        "draft_footnote":    "\n  Число — сумма преимуществ героя над противниками по данным Dotabuff.\n",
+        "draft_footnote":    "\n  Число — сумма преимуществ героя над противниками по данным Dotabuff.\n"
+                             "  Пары, сыгранные меньше 2000 раз, считаются нулём — слишком мало игр.\n",
         # Оверлей поверх игры
         "ov_btn":            "⧉  ОВЕРЛЕЙ",
         "ov_key_busy":       "{key} занята",
@@ -380,7 +408,13 @@ I18N = {
         "upd_error":         "Не удалось обновить: {detail}",
         "upd_title":         "ОБНОВЛЕНИЯ",
         "upd_subtitle":      "История обновлений программы",
-        "upd_text":          "v1.7\n"
+        "upd_text":          "v1.8\n"
+                             "Поиск: фильтр по роли — например, кто из саппортов сильнее против Pudge. Смена роли перерисовывает результат без новой загрузки.\n"
+                             "Редкие матчапы больше не сбивают: пары, сыгранные меньше 2000 раз, в списки не попадают, а в драфте считаются нулём. Это в основном пары с Chen, Batrider, Elder Titan, Lycan, Visage и Brewmaster.\n"
+                             "Страницы Dotabuff хранятся сутки в папке cache рядом с программой: повторный поиск и драфт — мгновенно, а отказов от Dotabuff меньше. После нового патча страницы загружаются заново. В настройках видно, сколько сохранено, и есть кнопка очистки.\n"
+                             "Иконки героев больше не пропадают: после поиска и драфта на вкладке «Поиск» вместо иконок оставались пустые места, и наоборот.\n"
+                             "\n"
+                             "v1.7\n"
                              "Драфт: кроме врагов можно добавить своих союзников и баны — они исчезают из подсказок. Герой, добавленный в другой список, переносится туда.\n"
                              "Драфт: фильтр по роли — керри, саппорт, инициатор и другие, по разметке Valve.\n"
                              "Состав драфта общий для вкладки и оверлея, а страницы врагов загружаются сразу при добавлении; «Подобрать» повторяет те, что не загрузились.\n"

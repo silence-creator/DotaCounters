@@ -26,6 +26,7 @@ BASE_URL = "https://www.dotabuff.com"
 
 _WIN_RATE_RE = re.compile(r"win\s*rate", re.I)
 _ADVANTAGE_RE = re.compile(r"advantage|disadvantage|\badv\b|\bdis\b", re.I)
+_MATCHES_RE = re.compile(r"\bmatches\b", re.I)
 _PERCENT_RE = re.compile(r"^-?\d{1,3}(?:[.,]\d+)?%$")
 _COUNTERED_BY_RE = re.compile(r"is\s+countered\s+by", re.I)
 _COUNTERS_RE = re.compile(r"\bcounters\b", re.I)
@@ -36,6 +37,11 @@ _MATCHUPS_RE = re.compile(r"\bmatchups\b", re.I)
 DEFAULT_LIMIT = 5
 #: Верхняя граница выбора в интерфейсе.
 MAX_LIMIT = 12
+#: Пары, сыгранные реже, считаются шумом: при 2000 матчей погрешность винрейта
+#: около ±1,1 п.п., а типичное преимущество в паре — 0,8. Замер по всем героям
+#: (7.41f): таких пар 0,5%, почти все — с Chen, Batrider, Elder Titan, Lycan,
+#: Visage, Brewmaster. В разделах поиска их нет, в драфте они дают ноль.
+MIN_MATCHES = 2000
 #: Паузы перед повторами запроса, отбитого с 403. Cloudflare отвечает так
 #: примерно на четверть холодных запросов; на замере из 12 страниц одной
 #: попытки хватило 8 раз, двух — 10, трёх — 11.
@@ -73,6 +79,8 @@ class Matchup:
     #: Преимущество числом из data-value: насколько хуже играет герой страницы
     #: против этого соперника. Положительное — соперник его контрит.
     advantage_value: float | None = None
+    #: Сколько матчей сыграно в этой паре — только в полной таблице «Matchups».
+    matches: int | None = None
 
 
 @dataclass
@@ -87,6 +95,17 @@ class CounterReport:
     #: True, если разделы пришлось определять по позиции, а не по заголовку —
     #: данные показываются, но с предупреждением.
     degraded: bool = False
+    #: Короткие таблицы Dotabuff — запасной источник разделов, когда полной
+    #: таблицы нет или в ней мало надёжных строк. Иначе не разбираются.
+    short_countered_by: list = field(default_factory=list)
+    short_counters: list = field(default_factory=list)
+    #: Сколько секунд назад страница скачана, если взята из кеша; иначе None.
+    cached_age: float | None = None
+
+
+def reliable(matchup) -> bool:
+    """Достаточно ли матчей в паре, чтобы верить её цифре."""
+    return matchup.matches is None or matchup.matches >= MIN_MATCHES
 
 
 # ── Разбор ────────────────────────────────────────────────────────────────────
@@ -125,6 +144,8 @@ def _column_map(headers: list, n_cells: int) -> dict:
             idx["hero"] = cell
         elif "advantage" not in idx and _ADVANTAGE_RE.search(header):
             idx["advantage"] = cell
+        elif "matches" not in idx and _MATCHES_RE.search(header):
+            idx["matches"] = cell
 
     missing = [k for k in ("hero", "win_rate") if k not in idx]
     if missing:
@@ -186,8 +207,14 @@ def _parse_rows(table, idx: dict) -> list:
             advantage = cell.get_text(strip=True) or None
             advantage_value = _to_float(cell.get("data-value"))
 
+        matches = None
+        if "matches" in idx and len(cells) > idx["matches"]:
+            value = _to_float(cells[idx["matches"]].get("data-value"))
+            matches = int(value) if value is not None else None
+
         out.append(Matchup(hero=hero, win_rate=win_rate, advantage=advantage,
-                           icon_url=_icon_url(row), advantage_value=advantage_value))
+                           icon_url=_icon_url(row), advantage_value=advantage_value,
+                           matches=matches))
     return out
 
 
@@ -255,26 +282,61 @@ def parse_counters(html: str, slug: str = "",
     if "matchups" in picked:
         report.matchups = _rows_of(picked["matchups"], "matchups")
 
-    # Хвост и голова не должны пересечься, поэтому берём полную таблицу
-    # только когда строк в ней заведомо хватает на оба раздела.
-    if len(report.matchups) >= 2 * limit:
-        report.countered_by = report.matchups[:limit]
-        report.counters = list(reversed(report.matchups[-limit:]))
-    else:
-        report.countered_by = _rows_of(picked["countered_by"], "countered_by")[:limit]
-        report.counters = _rows_of(picked["counters"], "counters")[:limit]
+    # Короткие таблицы нужны, только если полной не хватит на самый большой
+    # выбор «КОЛ-ВО». Разбираем их лишь тогда: если они сломаны, а полная цела,
+    # данные всё равно есть. В кеш уходит то, из чего разделы собираются для
+    # любого limit.
+    if sum(1 for m in report.matchups if reliable(m)) < 2 * MAX_LIMIT:
+        report.short_countered_by = _rows_of(picked["countered_by"], "countered_by")
+        report.short_counters = _rows_of(picked["counters"], "counters")
 
+    select_sections(report, limit)
     if not report.countered_by and not report.counters:
         raise ParseError("таблицы найдены, но ни одной строки разобрать не удалось")
+    return report
+
+
+def select_sections(report: CounterReport, limit: int = DEFAULT_LIMIT) -> CounterReport:
+    """Разделы «слабее против» и «сильнее против» на limit строк.
+
+    Берутся из полной таблицы без редких пар (MIN_MATCHES): она отсортирована
+    по убыванию преимущества соперника, начало — против кого хуже всего, конец —
+    против кого лучше. Голова и хвост не должны пересечься, поэтому полная
+    таблица идёт в дело, только когда надёжных строк хватает на оба раздела;
+    иначе — короткие таблицы Dotabuff как есть.
+    """
+    limit = max(1, min(int(limit), MAX_LIMIT))
+    rows = [m for m in report.matchups if reliable(m)]
+    if len(rows) >= 2 * limit:
+        report.countered_by = rows[:limit]
+        report.counters = list(reversed(rows[-limit:]))
+    else:
+        report.countered_by = report.short_countered_by[:limit]
+        report.counters = report.short_counters[:limit]
     return report
 
 
 # ── Сеть ──────────────────────────────────────────────────────────────────────
 
 def fetch_counters(hero_name: str, scraper=None,
-                   limit: int = DEFAULT_LIMIT) -> CounterReport:
-    """Скачать и разобрать страницу контрпиков героя."""
+                   limit: int = DEFAULT_LIMIT, cache=None) -> CounterReport:
+    """Скачать и разобрать страницу контрпиков героя.
+
+    cache — pagecache.PageCache: свежая сохранённая страница берётся оттуда
+    без сети, скачанная — сохраняется туда.
+    """
     slug = hero_slug(hero_name)
+    if cache is not None:
+        hit = cache.load(slug)
+        if hit is not None:
+            return select_sections(hit, limit)
+    report = _download(hero_name, slug, scraper, limit)
+    if cache is not None:
+        cache.save(slug, report)
+    return report
+
+
+def _download(hero_name: str, slug: str, scraper, limit: int) -> CounterReport:
     scraper = scraper or create_scraper()
     url = "%s/heroes/%s/counters" % (BASE_URL, slug)
     try:
@@ -297,7 +359,7 @@ def fetch_counters(hero_name: str, scraper=None,
     return parse_counters(resp.text, slug, limit=limit)
 
 
-def fetch_many(heroes, limit: int = DEFAULT_LIMIT, scraper=None, fetch=None):
+def fetch_many(heroes, limit: int = DEFAULT_LIMIT, scraper=None, fetch=None, cache=None):
     """Страницы нескольких героев одной сессией: -> (отчёты, [(герой, ошибка)]).
 
     Одна сессия на всю серию: на серии запросов с новым соединением каждый раз
@@ -309,7 +371,7 @@ def fetch_many(heroes, limit: int = DEFAULT_LIMIT, scraper=None, fetch=None):
     reports, failed = {}, []
     for hero in heroes:
         try:
-            reports[hero] = fetch(hero, scraper=scraper, limit=limit)
+            reports[hero] = fetch(hero, scraper=scraper, limit=limit, cache=cache)
         except DotabuffError as exc:
             failed.append((hero, exc))
         except Exception as exc:

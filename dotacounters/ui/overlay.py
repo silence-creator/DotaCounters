@@ -35,9 +35,11 @@ class Overlay:
     """Окно создаётся при первом показе и дальше только прячется."""
 
     def __init__(self, root, theme, tr, limit, hotkey_label, board,
-                 on_draft_change, position=None, on_move=None, on_search=None):
+                 on_draft_change, position=None, on_move=None, on_search=None,
+                 pages=None):
         self.root = root
         self.board = board                   # общий состав драфта
+        self._pages = pages                  # кеш страниц Dotabuff, общий с главным окном
         self._on_draft_change = on_draft_change  # главное окно докачает и перерисует
         self.T, self.tr = theme, tr
         self._limit = limit                  # функция: сколько строк показывать
@@ -328,7 +330,8 @@ class Overlay:
             if self._scraper is None:
                 self._scraper = create_scraper()
             try:
-                return fetch_counters(hero, scraper=self._scraper, limit=self._limit())
+                return fetch_counters(hero, scraper=self._scraper, limit=self._limit(),
+                                      cache=self._pages)
             except DotabuffError as exc:
                 return exc
             except Exception as exc:

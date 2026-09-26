@@ -11,12 +11,12 @@ from tkinter import ttk
 from PIL import ImageTk
 
 from .. import relaunch, updates
-from ..config import load_config, update_config
+from ..config import cache_dir, load_config, update_config
 from ..dotabuff import (
     DEFAULT_LIMIT, MAX_LIMIT, DotabuffError, FetchError, HeroNotFound,
     ParseError, fetch_counters, fetch_many,
 )
-from ..draft import GROUPS, DraftBoard, analyse
+from ..draft import GROUPS, DraftBoard, analyse, counters_with_role
 from ..heroes import best_match, resolve
 from ..hotkey import (
     DEFAULT_HOTKEY, HOTKEY_PRESETS, GlobalHotkey, format_hotkey, parse_hotkey,
@@ -28,7 +28,8 @@ from ..recent import (
     MAX_FAVOURITES, MAX_HISTORY, clean_list, is_favourite, remember,
     sane_geometry, toggle_favourite,
 )
-from ..patches import fetch_current_patch
+from ..pagecache import PageCache
+from ..patches import FALLBACK_PATCH, fetch_current_patch
 from ..themes import THEMES
 from ..version import APP_VERSION
 from .hero_browser import HeroBrowserModal
@@ -58,11 +59,13 @@ class DotaApp:
         self.T          = THEMES[self._theme_key]
         self.tr         = I18N[self._lang]
 
-        self.hero_images       = []
         self._placeholder_active = False
         self._patch_version    = "…"
         self._active_tab       = "search"   # search | draft | settings | updates
         # Состав драфта — общий для вкладки и оверлея
+        # Страницы Dotabuff на сутки — в cache/pages рядом с программой
+        folder = cache_dir()
+        self._pages = PageCache(os.path.join(folder, "pages") if folder else None)
         self._board            = DraftBoard()
         self._draft_group      = "enemies"  # куда пойдёт набранный герой
         self._draft_scraper    = None       # одна сессия на все запросы драфта
@@ -71,6 +74,8 @@ class DotaApp:
         self._update_btn       = None
         self._update_status    = None
         self._hotkey_note      = None       # (текст, цвет) после смены клавиши
+        self._search_role      = None       # роль соперников во вкладке «Поиск»
+        self._last_report      = None       # последний найденный отчёт поиска
         updates.cleanup_old()               # хвост от прошлого обновления
 
         # Оверлей и его клавиша живут всё время работы программы, а не
@@ -81,7 +86,8 @@ class DotaApp:
                                 position=cfg.get("overlay_pos"),
                                 on_move=lambda pos: update_config(overlay_pos=pos),
                                 on_search=self._remember_hero,
-                                board=self._board, on_draft_change=self._draft_changed)
+                                board=self._board, on_draft_change=self._draft_changed,
+                                pages=self._pages)
         self._hotkey = GlobalHotkey(self._hotkey_text,
                                     lambda: self.root.after(0, self._overlay.toggle))
         self._hotkey_ok = self._hotkey.start()
@@ -463,8 +469,14 @@ class DotaApp:
         card.grid(row=0, column=0, sticky="ew", pady=(0, 10))
         inner = tk.Frame(card, bg=T["BG_CARD"])
         inner.pack(fill=tk.X, padx=14, pady=12)
-        tk.Label(inner, text=tr["hero_name_label"], font=self.font_label,
-                 fg=T["TEXT_DIM"], bg=T["BG_CARD"]).pack(anchor="w", pady=(0, 4))
+        top = tk.Frame(inner, bg=T["BG_CARD"])
+        top.pack(fill=tk.X, pady=(0, 4))
+        tk.Label(top, text=tr["hero_name_label"], font=self.font_label,
+                 fg=T["TEXT_DIM"], bg=T["BG_CARD"]).pack(side=tk.LEFT)
+        # Роль соперников: «кто из саппортов сильнее против Pudge»
+        role_menu(top, T, tr, self._search_role, self._set_search_role).pack(side=tk.RIGHT)
+        tk.Label(top, text=tr["role_label"], font=("Courier New", 9, "bold"),
+                 fg=T["TEXT_DIM"], bg=T["BG_CARD"]).pack(side=tk.RIGHT, padx=(0, 6))
         row = tk.Frame(inner, bg=T["BG_CARD"])
         row.pack(fill=tk.X)
 
@@ -580,6 +592,7 @@ class DotaApp:
                                    selectbackground=T["GLOW"],
                                    relief="flat", bd=0, padx=14, pady=10, spacing2=2)
         self.result_area.grid(row=0, column=0, sticky="nsew")
+        self.result_area.icons = []     # свои иконки у каждого поля вывода
         sb = ttk.Scrollbar(tf, orient="vertical", style="Dark.Vertical.TScrollbar",
                            command=self.result_area.yview)
         sb.grid(row=0, column=1, sticky="ns")
@@ -683,6 +696,7 @@ class DotaApp:
                                   relief="flat", bd=0, padx=14, pady=10, spacing2=3,
                                   state=tk.DISABLED)
         self.draft_area.grid(row=0, column=0, sticky="nsew")
+        self.draft_area.icons = []
         sb = ttk.Scrollbar(tf, orient="vertical", style="Dark.Vertical.TScrollbar",
                            command=self.draft_area.yview)
         sb.grid(row=0, column=1, sticky="ns")
@@ -811,7 +825,8 @@ class DotaApp:
         with self._draft_lock:
             if self._draft_scraper is None:
                 self._draft_scraper = create_scraper()
-            reports, failed = fetch_many(heroes, limit=self._limit, scraper=self._draft_scraper)
+            reports, failed = fetch_many(heroes, limit=self._limit, scraper=self._draft_scraper,
+                                         cache=self._pages)
         # Иконки будущего вывода — заранее, в фоне: иначе первый показ ждал бы сеть
         enemies, known, exclude, role = snapshot
         known.update(reports)
@@ -843,8 +858,7 @@ class DotaApp:
         tr, board = self.tr, self._board
         area = self.draft_area
         area.config(state=tk.NORMAL)
-        area.delete(1.0, tk.END)
-        self.hero_images = []
+        self._clear_area(area)
 
         for hero in board.enemies:
             if hero in board.failed:
@@ -958,11 +972,27 @@ class DotaApp:
         tk.Label(hk, text=note, font=("Courier New", 9), fg=colour,
                  bg=T["BG_DARK"]).pack(anchor="w", pady=(6, 0))
 
+        # ── Сохранённые страницы Dotabuff ─────────────────────────────────────
+        self._add_section_header(inner, 7, tr["set_cache_head"], tr["set_cache_sub"])
+        cache_row = tk.Frame(inner, bg=T["BG_DARK"])
+        cache_row.grid(row=8, column=0, sticky="ew", **pad)
+        self._cache_label = tk.Label(cache_row, text=tr["set_cache_info"].format(
+                                         n=self._pages.count()),
+                                     font=("Courier New", 9), fg=T["TEXT_DIM"],
+                                     bg=T["BG_DARK"], justify=tk.LEFT)
+        self._cache_label.pack(side=tk.LEFT)
+        tk.Button(cache_row, text=tr["set_cache_clear"], font=("Courier New", 9, "bold"),
+                  bg=T["BG_PANEL"], fg=T["ACCENT3"],
+                  activebackground=T["GLOW"], activeforeground=T["ACCENT"],
+                  relief="flat", bd=0, padx=12, pady=5, cursor="hand2",
+                  highlightbackground=T["BORDER"], highlightthickness=1,
+                  command=self._clear_page_cache).pack(side=tk.RIGHT)
+
         # ── ABOUT section ─────────────────────────────────────────────────────
-        self._add_section_header(inner, 7, tr["set_about_head"], "")
+        self._add_section_header(inner, 9, tr["set_about_head"], "")
         about_card = tk.Frame(inner, bg=T["BG_CARD"],
                               highlightbackground=T["BORDER"], highlightthickness=1)
-        about_card.grid(row=8, column=0, sticky="ew", **pad)
+        about_card.grid(row=10, column=0, sticky="ew", **pad)
         about_card.columnconfigure(1, weight=1)
 
         rows_info = [
@@ -989,7 +1019,7 @@ class DotaApp:
         # Description
         desc_card = tk.Frame(inner, bg=T["BG_PANEL"],
                              highlightbackground=T["BORDER"], highlightthickness=1)
-        desc_card.grid(row=9, column=0, sticky="ew", padx=20, pady=(0, 24))
+        desc_card.grid(row=11, column=0, sticky="ew", padx=20, pady=(0, 24))
         tk.Label(desc_card, text=tr["set_desc"],
                  font=("Courier New", 9), fg=T["TEXT_DIM"], bg=T["BG_PANEL"],
                  justify=tk.LEFT, padx=16, pady=12).pack(anchor="w")
@@ -1143,6 +1173,12 @@ class DotaApp:
             btn.bind("<Enter>",  lambda e, b=btn: b.config(bg=T["GLOW"], fg=T["ACCENT"]))
             btn.bind("<Leave>",  lambda e, b=btn: b.config(bg=T["BG_PANEL"], fg=T["TEXT_PRIMARY"]))
 
+    def _clear_page_cache(self):
+        """Удалить сохранённые страницы: следующий поиск скачает свежие."""
+        removed = self._pages.clear()
+        self._cache_label.config(text=self.tr["set_cache_cleared"].format(n=removed),
+                                 fg=self.T["ACCENT"])
+
     def _make_hotkey_btn(self, parent, text):
         T = self.T
         active = parse_hotkey(text) == parse_hotkey(self._hotkey_text)
@@ -1233,6 +1269,8 @@ class DotaApp:
     def _load_patch(self):
         version = fetch_current_patch()
         self._patch_version = version
+        if version != FALLBACK_PATCH:
+            self._pages.patch = version    # страницы прошлого патча устарели
         self.root.after(0, self._apply_patch_label, version)
 
     def _apply_patch_label(self, version):
@@ -1452,7 +1490,7 @@ class DotaApp:
     def _bg_fetch(self, hero):
         """Сеть и разбор в фоне; исключение довозим до UI как результат."""
         try:
-            outcome = fetch_counters(hero, limit=self._limit)
+            outcome = fetch_counters(hero, limit=self._limit, cache=self._pages)
         except DotabuffError as exc:
             outcome = exc
         except Exception as exc:  # непредвиденное — тоже показываем, не глотаем
@@ -1461,11 +1499,11 @@ class DotaApp:
 
     def _apply_result(self, hero, outcome):
         self.result_area.config(state=tk.NORMAL)
-        self.result_area.delete(1.0, tk.END)
-        self.hero_images = []
+        self._clear_area(self.result_area)
         if isinstance(outcome, DotabuffError):
             self._render_error(hero, outcome)
         else:
+            self._last_report = outcome        # смена роли перерисует без сети
             self._render_report(outcome)
             self._remember_hero(hero)
         self.result_area.config(state=tk.DISABLED)
@@ -1493,8 +1531,17 @@ class DotaApp:
         title = report.hero_slug.upper().replace("-", " ")
         rule = "  " + "─" * 46 + "\n"
 
-        for tag, label, rows in (("bad", tr["bad_against"], report.countered_by),
-                                 ("good", tr["good_against"], report.counters)):
+        weak, strong = report.countered_by, report.counters
+        if self._search_role:
+            if not report.matchups:
+                self.result_area.insert(tk.END, tr["role_no_table"], "wr_bad")
+            else:
+                weak, strong = counters_with_role(report, self._search_role, self._limit)
+                self.result_area.insert(tk.END, tr["draft_role_note"].format(
+                    role=tr["role_" + self._search_role]), "dim")
+
+        for tag, label, rows in (("bad", tr["bad_against"], weak),
+                                 ("good", tr["good_against"], strong)):
             self.result_area.insert(tk.END, rule, "divider")
             self.result_area.insert(tk.END, f"  {title}  ◈  {label}\n", tag)
             self.result_area.insert(tk.END, rule, "divider")
@@ -1504,7 +1551,40 @@ class DotaApp:
                 self.result_area.insert(tk.END, f"  {m.win_rate}\n", "wr_" + tag)
             self.result_area.insert(tk.END, "\n", "divider")
 
-        self._set_status(tr["status_complete"], self.T["ACCENT"])
+        if report.cached_age is not None:
+            self._set_status(tr["status_cached"].format(age=self._age_text(report.cached_age)),
+                             self.T["ACCENT"])
+        else:
+            self._set_status(tr["status_complete"], self.T["ACCENT"])
+
+    def _age_text(self, seconds):
+        """«3 ч», «15 мин» — сколько назад страница скачана."""
+        minutes = int(seconds // 60)
+        if minutes < 60:
+            return self.tr["age_min"].format(n=max(1, minutes))
+        return self.tr["age_hours"].format(n=minutes // 60)
+
+    def _set_search_role(self, role):
+        """Роль соперников в поиске: перерисовать последний ответ без сети."""
+        self._search_role = role
+        report = self._last_report
+        if report is None:
+            return
+        area = self.result_area
+        area.config(state=tk.NORMAL)
+        self._clear_area(area)
+        self._render_report(report)
+        area.config(state=tk.DISABLED)
+
+    @staticmethod
+    def _clear_area(area):
+        """Очистить поле вывода вместе с его иконками — и только его.
+
+        Раньше иконки поиска и драфта лежали в одном списке, и перерисовка
+        одной вкладки выбрасывала картинки другой: там оставались пустые места.
+        """
+        area.delete(1.0, tk.END)
+        area.icons = []
 
     def _insert_icon(self, url, area=None):
         """Иконка героя перед именем; если не загрузилась — просто отступ.
@@ -1518,7 +1598,9 @@ class DotaApp:
             img = load_icon(url, box=HERO_ICON_BOX)
             if img is not None:
                 photo = ImageTk.PhotoImage(img)
-                self.hero_images.append(photo)
+                # Ссылку держит само поле: картинка без ссылок из Python
+                # удаляется, и Tk показывает пустое место
+                area.icons.append(photo)
                 area.insert(tk.END, "  ")
                 area.image_create(tk.END, image=photo)
                 return
