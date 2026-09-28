@@ -24,7 +24,8 @@ MAX_AGE = 24 * 3600
 #: Версия формата файла: при изменении старые файлы считаются промахом.
 FORMAT = 1
 
-_SAFE_SLUG = re.compile(r"^[a-z0-9-]{1,40}$")
+#: «pudge» — месяц, «pudge@week», «pudge@patch_7.41» — другие периоды.
+_SAFE_SLUG = re.compile(r"^[a-z0-9-]{1,40}(@[a-z0-9_.]{1,20})?$")
 _MATCHUP_FIELDS = {f.name for f in fields(Matchup)}
 
 

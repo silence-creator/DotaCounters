@@ -8,14 +8,19 @@ from PIL import Image, ImageTk
 
 from ..icons import fetch_icons, is_glyph, tint
 from ..patches import BADGE_MARK, fetch_patch_notes
+from .dpi import px_size
+from .style import make_fonts
 from .winapi import set_title_bar_color
 
 
 class PatchNotesModal(tk.Toplevel):
-    #: Размер рамки иконки в строке заметки: под высоту шрифта Courier New 10.
+    #: Размер рамки иконки в строке заметки: под высоту основного шрифта.
     ICON_BOX = (24, 16)
+    ICON_PAD = 4          # поля иконки слева и справа в тексте заметок
 
-    def __init__(self, parent, theme: dict, tr: dict, patch_version: str):
+    def __init__(self, parent, theme: dict, tr: dict, patch_version: str, fonts=None):
+        self.F = fonts or make_fonts(parent)
+
         super().__init__(parent)
         self.T = theme
         self.tr = tr
@@ -24,8 +29,8 @@ class PatchNotesModal(tk.Toplevel):
         self.title(tr["pn_window_title"].format(version=patch_version))
         self.configure(bg=theme["BG_DARK"])
         self.resizable(True, True)
-        self.minsize(560, 500)
-        self.geometry("720x760")
+        self.minsize(*px_size((560, 500)))
+        self.geometry("%dx%d" % px_size((720, 760)))
         self.transient(parent)
         self.grab_set()
         self._center(parent)
@@ -52,16 +57,15 @@ class PatchNotesModal(tk.Toplevel):
         # ── Заголовок ─────────────────────────────────────────────────────────
         hdr = tk.Frame(self, bg=T["BG_DARK"])
         hdr.grid(row=0, column=0, sticky="ew", padx=16, pady=(14, 0))
-        tk.Frame(hdr, bg=T["ACCENT"], width=4).pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
         left = tk.Frame(hdr, bg=T["BG_DARK"])
         left.pack(side=tk.LEFT)
-        tk.Label(left, text=f"PATCH  {self.patch_version}",
-                 font=("Courier New", 18, "bold"),
-                 fg=T["ACCENT"], bg=T["BG_DARK"]).pack(anchor="w")
+        tk.Label(left, text=self.tr["pn_title"].format(patch=self.patch_version),
+                 font=self.F["h1"],
+                 fg=T["TEXT"], bg=T["BG_DARK"]).pack(anchor="w")
         tk.Label(left, text=self.tr["pn_source"],
-                 font=("Courier New", 9), fg=T["TEXT_DIM"], bg=T["BG_DARK"]).pack(anchor="w")
+                 font=self.F["small"], fg=T["TEXT_DIM"], bg=T["BG_DARK"]).pack(anchor="w")
 
-        close_btn = tk.Button(hdr, text="✕", font=("Courier New", 12, "bold"),
+        close_btn = tk.Button(hdr, text="✕", font=self.F["h2"],
                               bg=T["BG_DARK"], fg=T["TEXT_DIM"],
                               activebackground=T["BG_DARK"], activeforeground=T["ACCENT2"],
                               relief="flat", bd=0, cursor="hand2", command=self.destroy)
@@ -84,7 +88,7 @@ class PatchNotesModal(tk.Toplevel):
         self._search_var.trace_add("write", self._on_search)
         self._filter_entry = tk.Entry(
             ei, textvariable=self._search_var,
-            font=("Courier New", 11),
+            font=self.F["input"],
             bg=T["BG_PANEL"], fg=T["TEXT_PRIMARY"],
             insertbackground=T["ACCENT"],
             relief="flat", bd=5, highlightthickness=0)
@@ -101,8 +105,6 @@ class PatchNotesModal(tk.Toplevel):
         wrap.columnconfigure(1, weight=1)
         wrap.rowconfigure(0, weight=1)
 
-        tk.Frame(wrap, bg=T["ACCENT"], width=2).grid(row=0, column=0, sticky="ns")
-
         card = tk.Frame(wrap, bg=T["BG_CARD"],
                         highlightbackground=T["BORDER"], highlightthickness=1)
         card.grid(row=0, column=1, sticky="nsew")
@@ -115,47 +117,41 @@ class PatchNotesModal(tk.Toplevel):
         tf.rowconfigure(0, weight=1)
 
         self._text = tk.Text(
-            tf, wrap=tk.WORD, font=("Courier New", 10),
+            tf, wrap=tk.WORD, font=self.F["body"],
             bg=T["BG_CARD"], fg=T["TEXT_PRIMARY"],
             insertbackground=T["ACCENT"],
             selectbackground=T["GLOW"],
-            relief="flat", bd=0, padx=14, pady=10, spacing2=3,
+            relief="flat", bd=0, padx=18, pady=12, spacing2=2,
             state=tk.DISABLED)
         self._text.grid(row=0, column=0, sticky="nsew")
 
-        style = ttk.Style()
-        style.configure("PN.Vertical.TScrollbar",
-                        background=T["SCROLLBAR_BG"], troughcolor=T["SCROLLBAR_BG"],
-                        bordercolor=T["SCROLLBAR_BG"], darkcolor=T["SCROLLBAR_BG"],
-                        lightcolor=T["SCROLLBAR_BG"], arrowcolor=T["TEXT_DIM"],
-                        relief="flat", borderwidth=0)
-        style.map("PN.Vertical.TScrollbar",
-                  background=[("active", T["BG_PANEL"]), ("disabled", T["SCROLLBAR_BG"])],
-                  arrowcolor=[("active", T["ACCENT"])])
-
-        sb = ttk.Scrollbar(tf, orient="vertical", style="PN.Vertical.TScrollbar",
+        # Полоса прокрутки — общий тонкий стиль главного окна (app._apply_theme_styles)
+        sb = ttk.Scrollbar(tf, orient="vertical", style="Dark.Vertical.TScrollbar",
                            command=self._text.yview)
         sb.grid(row=0, column=1, sticky="ns")
         self._text.config(yscrollcommand=sb.set)
         self._text.bind("<MouseWheel>", lambda e: None)
 
-        # Теги
-        self._text.tag_config("section", foreground=T["ACCENT3"],
-                               font=("Courier New", 10, "bold"))
-        self._text.tag_config("divider", foreground=T["TEXT_MUTED"])
-        self._text.tag_config("note",    foreground=T["TEXT_PRIMARY"])
+        # Теги. Пункт с иконкой: перенесённые строки начинаются под текстом, а не
+        # под иконкой — отступ второй строки равен ширине иконки с полями.
+        icon_cell = self.ICON_BOX[0] + 2 * self.ICON_PAD
+        self._text.tag_config("section", foreground=T["TEXT"], font=self.F["h2"],
+                              spacing1=18, spacing3=8)
+        self._text.tag_config("item", spacing1=5)
+        self._text.tag_config("item_icon", spacing1=5, lmargin2=icon_cell)
+        self._text.tag_config("note",    foreground=T["TEXT"])
         self._text.tag_config("loading", foreground=T["ACCENT3"])
         self._text.tag_config("error",   foreground=T["ACCENT2"],
-                               font=("Courier New", 10, "bold"))
+                               font=self.F["body_b"])
         self._text.tag_config("match",   foreground=T["ACCENT"],
-                               font=("Courier New", 10, "bold"))
+                               font=self.F["body_b"])
         # Метки «New Item», «Item Reworked» — заметным цветом
         self._text.tag_config("badge",   foreground=T["ACCENT2"],
-                               font=("Courier New", 10, "bold"))
+                               font=self.F["body_b"])
 
         # ── Статус-бар ────────────────────────────────────────────────────────
         self._status_lbl = tk.Label(
-            self, text="", font=("Courier New", 8),
+            self, text="", font=self.F["small"],
             fg=T["TEXT_MUTED"], bg=T["BG_DARK"])
         self._status_lbl.grid(row=4, column=0, sticky="w", padx=18, pady=(4, 8))
 
@@ -214,7 +210,7 @@ class PatchNotesModal(tk.Toplevel):
         for sec in sections:
             urls.extend(sec.get("icons") or [])
         if any(urls):
-            self._safe_after(self._apply_icons, fetch_icons(urls, box=self.ICON_BOX))
+            self._safe_after(self._apply_icons, fetch_icons(urls, box=px_size(self.ICON_BOX)))
 
     def _safe_after(self, fn, *args) -> bool:
         """Передать вызов в главный поток; False, если окно уже закрыто."""
@@ -238,7 +234,7 @@ class PatchNotesModal(tk.Toplevel):
         self._photos = {
             url: ImageTk.PhotoImage(tint(img, self.T["TEXT_PRIMARY"]) if is_glyph(url) else img)
             for url, img in images.items()}
-        self._blank = ImageTk.PhotoImage(Image.new("RGBA", self.ICON_BOX, (0, 0, 0, 0)))
+        self._blank = ImageTk.PhotoImage(Image.new("RGBA", px_size(self.ICON_BOX), (0, 0, 0, 0)))
         self._rerender()
 
     # ── Рендер ───────────────────────────────────────────────────────────────
@@ -263,14 +259,13 @@ class PatchNotesModal(tk.Toplevel):
         total_notes = 0
         for sec in sections:
             # Заголовок секции, у героев — с иконкой героя
-            txt.insert(tk.END, "  " + "─" * 50 + "\n", "divider")
-            txt.insert(tk.END, "  ◈  ", "section")
+            start = txt.index("end-1c")
             head_icon = photos.get(sec.get("icon"))
             if head_icon:
-                txt.image_create(tk.END, image=head_icon, align="center")
+                txt.image_create(tk.END, image=head_icon, align="center", padx=self.ICON_PAD)
                 txt.insert(tk.END, " ", "section")
             txt.insert(tk.END, f"{sec['title']}\n", "section")
-            txt.insert(tk.END, "  " + "─" * 50 + "\n", "divider")
+            txt.tag_add("section", start, "end-1c")   # отступы строки — и у иконки
 
             notes = sec["notes"]
             icons = sec.get("icons") or [None] * len(notes)
@@ -288,14 +283,17 @@ class PatchNotesModal(tk.Toplevel):
                     tag = "badge"
                 else:
                     tag = "note"
-                txt.insert(tk.END, "  ·  ", tag)
+                start = txt.index("end-1c")
                 if with_icons:
                     # Иконка — на первой строке группы (предмета, способности),
                     # на остальных строках той же группы — пустая рамка.
                     icon = photos.get(url) if group != prev_group else None
-                    txt.image_create(tk.END, image=icon or self._blank, align="center")
-                    txt.insert(tk.END, " ", tag)
+                    txt.image_create(tk.END, image=icon or self._blank, align="center",
+                                     padx=self.ICON_PAD)
                 txt.insert(tk.END, note + "\n", tag)
+                # Отступы абзаца Tk берёт у первого символа строки — это иконка,
+                # поэтому тег отступов ставится на всю строку вместе с ней.
+                txt.tag_add("item_icon" if with_icons else "item", start, "end-1c")
                 prev_group = group
                 total_notes += 1
             txt.insert(tk.END, "\n")

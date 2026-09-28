@@ -1,24 +1,61 @@
-"""Выпадающий список ролей для драфта: во вкладке и в оверлее."""
+"""Выбор роли: ряд «фишек» с основными ролями и меню «Ещё ▾» для остальных.
+
+Роли — по разметке Valve (draft.ROLE_FILTERS). Используется в поиске, в
+обоих драфтах и в оверлее.
+"""
 
 import tkinter as tk
 
 from ..draft import ROLE_FILTERS
+from .widgets import ChipRow
+
+#: Роли, что стоят «фишками»; остальные — в меню «Ещё».
+MAIN_ROLES = ("carry", "support", "initiator", "disabler", "nuker")
+COMPACT_ROLES = ("carry", "support")
+_MORE = "__more__"
 
 
-def role_menu(parent, theme, tr, current, on_change, font=("Courier New", 9, "bold")):
-    """Список «Любая, Керри, Саппорт…». on_change(роль или None) — при выборе."""
-    T = theme
-    options = [(None, tr["role_any"])] + [(role, tr["role_" + role]) for role in ROLE_FILTERS]
-    by_label = {label: role for role, label in options}
-    var = tk.StringVar(value=dict(options).get(current, tr["role_any"]))
-    menu = tk.OptionMenu(parent, var, *[label for _, label in options],
-                         command=lambda label: on_change(by_label[label]))
-    menu.config(font=font, bg=T["BG_PANEL"], fg=T["ACCENT3"],
-                activebackground=T["GLOW"], activeforeground=T["ACCENT"],
-                relief="flat", bd=0, highlightthickness=1,
-                highlightbackground=T["BORDER"], cursor="hand2", padx=8, pady=2)
-    menu["menu"].config(font=(font[0], font[1]), bg=T["BG_PANEL"], fg=T["TEXT_PRIMARY"],
-                        activebackground=T["GLOW"], activeforeground=T["ACCENT"], bd=0)
-    # Роль общая для вкладки и оверлея: выбранную в одном месте показываем в другом
-    menu.show_role = lambda role: var.set(dict(options).get(role, tr["role_any"]))
-    return menu
+class RolePicker(tk.Frame):
+    """Любая / основные роли / «Ещё ▾». on_change(роль или None) — при выборе."""
+
+    def __init__(self, parent, T, F, tr, current, on_change, bg=None, main=MAIN_ROLES):
+        bg = bg or T["BG"]
+        super().__init__(parent, bg=bg)
+        self.T, self.F, self.tr, self._on_change, self.main = T, F, tr, on_change, main
+        self.extra = [r for r in ROLE_FILTERS if r not in main]
+        self.value = current
+        self.chips = ChipRow(self, T, F, [(None, tr["role_any"])] +
+                             [(r, tr["role_" + r]) for r in main],
+                             self._chip_value(current), self._pick, bg=bg)
+        self.chips.pack(side=tk.LEFT)
+        self.more = tk.Menubutton(self, font=F["small_b"], relief="flat", bd=0, padx=10, pady=3,
+                                  cursor="hand2", highlightthickness=1,
+                                  activebackground=T["SELECTED"], activeforeground=T["TEXT"])
+        menu = tk.Menu(self.more, tearoff=0, bg=T["PANEL"], fg=T["TEXT"],
+                       activebackground=T["SELECTED"], activeforeground=T["TEXT"],
+                       font=F["body"], bd=0)
+        for role in self.extra:
+            menu.add_command(label=tr["role_" + role], command=lambda r=role: self._pick(r))
+        self.more["menu"] = menu
+        self.more.pack(side=tk.LEFT)
+        self.set(current)
+
+    def _chip_value(self, role):
+        return role if role is None or role in self.main else _MORE
+
+    def _pick(self, role):
+        if role == _MORE or role == self.value:
+            return
+        self.set(role)
+        self._on_change(role)
+
+    def set(self, role):
+        """Показать выбранную роль, не вызывая on_change."""
+        T, tr = self.T, self.tr
+        self.value = role
+        self.chips.set(self._chip_value(role))
+        on = role in self.extra
+        self.more.config(text=(tr["role_" + role] if on else tr["role_more"]) + " ▾",
+                         bg=T["GOLD_BG"] if on else self["bg"],
+                         fg=T["TEXT"] if on else T["TEXT2"],
+                         highlightbackground=T["GOLD"] if on else T["LINE"])

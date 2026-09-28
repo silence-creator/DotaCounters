@@ -318,36 +318,78 @@ def select_sections(report: CounterReport, limit: int = DEFAULT_LIMIT) -> Counte
 
 # ── Сеть ──────────────────────────────────────────────────────────────────────
 
+#: За какой период брать статистику. «month» — то, что Dotabuff показывает по
+#: умолчанию, без параметра в адресе; «patch» — весь текущий патч (7.41, без
+#: буквы): данных примерно впятеро больше, чем за месяц.
+PERIODS = ("week", "month", "patch")
+DEFAULT_PERIOD = "month"
+
+_MAJOR_PATCH_RE = re.compile(r"\d+\.\d+")
+
+
+def period_param(period: str, patch: str | None = None) -> str:
+    """Значение ?date= для периода: «week», «patch_7.41»; для месяца — пусто.
+
+    Для «patch» нужен номер патча («7.41f» -> «7.41»); если он неизвестен,
+    берётся месяц — лучше данные за месяц, чем запрос к несуществующему патчу.
+    """
+    if period == "week":
+        return "week"
+    if period == "patch":
+        found = _MAJOR_PATCH_RE.search(patch or "")
+        if found:
+            return "patch_" + found.group(0)
+    return ""
+
+
 def fetch_counters(hero_name: str, scraper=None,
-                   limit: int = DEFAULT_LIMIT, cache=None) -> CounterReport:
+                   limit: int = DEFAULT_LIMIT, cache=None,
+                   period: str = DEFAULT_PERIOD, patch: str | None = None) -> CounterReport:
     """Скачать и разобрать страницу контрпиков героя.
 
     cache — pagecache.PageCache: свежая сохранённая страница берётся оттуда
-    без сети, скачанная — сохраняется туда.
+    без сети, скачанная — сохраняется туда. period и patch — см. period_param;
+    страницы разных периодов хранятся в кеше отдельно.
     """
     slug = hero_slug(hero_name)
+    param = period_param(period, patch)
+    key = slug + ("@" + param if param else "")
     if cache is not None:
-        hit = cache.load(slug)
+        hit = cache.load(key)
         if hit is not None:
             return select_sections(hit, limit)
-    report = _download(hero_name, slug, scraper, limit)
+    report = _download(hero_name, slug, scraper, limit, param)
     if cache is not None:
-        cache.save(slug, report)
+        cache.save(key, report)
     return report
 
 
-def _download(hero_name: str, slug: str, scraper, limit: int) -> CounterReport:
-    scraper = scraper or create_scraper()
-    url = "%s/heroes/%s/counters" % (BASE_URL, slug)
-    try:
+def _get_with_retries(scraper, url):
+    resp = scraper.get(url, timeout=10)
+    for pause in RETRY_PAUSES:
+        # Cloudflare отбивает часть запросов случайно; повтор тем же
+        # соединением обычно проходит.
+        if resp.status_code != 403:
+            break
+        time.sleep(pause)
         resp = scraper.get(url, timeout=10)
-        for pause in RETRY_PAUSES:
-            # Cloudflare отбивает часть запросов случайно; повтор тем же
-            # соединением обычно проходит.
-            if resp.status_code != 403:
-                break
-            time.sleep(pause)
-            resp = scraper.get(url, timeout=10)
+    return resp
+
+
+def _download(hero_name: str, slug: str, scraper, limit: int,
+              param: str = "") -> CounterReport:
+    scraper = scraper or create_scraper()
+    base = "%s/heroes/%s/counters" % (BASE_URL, slug)
+    url = base + ("?date=" + param if param else "")
+    try:
+        resp = _get_with_retries(scraper, url)
+        if resp.status_code == 403 and param:
+            # Адрес с параметром холодная сессия получает с 403 раз за разом,
+            # а после одного обычного запроса — сразу, как браузер, пришедший
+            # со страницы героя (замер сентября 2026). Для страницы без
+            # параметра такой прогрев не помогал — там достаточно повтора.
+            scraper.get(base, timeout=10)
+            resp = _get_with_retries(scraper, url)
     except Exception as exc:
         raise FetchError(str(exc)) from exc
 
@@ -359,7 +401,8 @@ def _download(hero_name: str, slug: str, scraper, limit: int) -> CounterReport:
     return parse_counters(resp.text, slug, limit=limit)
 
 
-def fetch_many(heroes, limit: int = DEFAULT_LIMIT, scraper=None, fetch=None, cache=None):
+def fetch_many(heroes, limit: int = DEFAULT_LIMIT, scraper=None, fetch=None, cache=None,
+               period: str = DEFAULT_PERIOD, patch: str | None = None):
     """Страницы нескольких героев одной сессией: -> (отчёты, [(герой, ошибка)]).
 
     Одна сессия на всю серию: на серии запросов с новым соединением каждый раз
@@ -371,7 +414,8 @@ def fetch_many(heroes, limit: int = DEFAULT_LIMIT, scraper=None, fetch=None, cac
     reports, failed = {}, []
     for hero in heroes:
         try:
-            reports[hero] = fetch(hero, scraper=scraper, limit=limit, cache=cache)
+            reports[hero] = fetch(hero, scraper=scraper, limit=limit, cache=cache,
+                                  period=period, patch=patch)
         except DotabuffError as exc:
             failed.append((hero, exc))
         except Exception as exc:

@@ -4,7 +4,7 @@ a = Analysis(
     ['main.py'],
     pathex=['.'],
     binaries=[],
-    datas=[],
+    datas=[('icon.png', '.')],   # значок окна: app.py берёт его из sys._MEIPASS
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

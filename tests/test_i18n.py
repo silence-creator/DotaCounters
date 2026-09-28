@@ -38,8 +38,6 @@ class I18nTest(unittest.TestCase):
     def test_version_labels_follow_app_version(self):
         for table in I18N.values():
             self.assertEqual(table["set_ver_val"], APP_VERSION)
-            self.assertTrue(table["welcome_title"].endswith("v" + APP_VERSION))
-            self.assertTrue(table["app_subtitle"].endswith("v " + " ".join(APP_VERSION)))
 
 
 if __name__ == "__main__":

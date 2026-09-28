@@ -16,8 +16,9 @@ def main():
 
     import tkinter as tk
 
-    from dotacounters.ui import DotaApp
+    from dotacounters.ui import DotaApp, dpi
 
+    dpi.enable()          # до окна: иначе Windows растянет его картинкой, и текст размоется
     root = tk.Tk()
     DotaApp(root)
     root.mainloop()

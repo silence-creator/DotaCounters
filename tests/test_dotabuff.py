@@ -17,8 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotacounters import dotabuff  # noqa: E402
 from dotacounters.dotabuff import (  # noqa: E402
     MAX_LIMIT, CounterReport, FetchError, HeroNotFound, ParseError, fetch_many,
-    select_sections,
-    hero_slug, parse_counters,
+    hero_slug, parse_counters, period_param, select_sections,
 )
 
 FIXTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -146,6 +145,53 @@ class RetryTest(unittest.TestCase):
         self.assertEqual(scraper.calls, 1)
 
 
+class PeriodTest(unittest.TestCase):
+    """Период статистики — параметр ?date= на странице контрпиков."""
+
+    class Scraper:
+        """Отвечает 403 на адрес с параметром, пока не было обычного запроса."""
+
+        def __init__(self, body, cold=True):
+            self.body, self.cold, self.urls = body, cold, []
+
+        def get(self, url, **kwargs):
+            self.urls.append(url)
+            if "?date=" not in url:
+                self.cold = False
+            code = 403 if (self.cold and "?date=" in url) else 200
+            return type("R", (), {"status_code": code, "text": self.body})()
+
+    def setUp(self):
+        self._pauses = dotabuff.RETRY_PAUSES
+        dotabuff.RETRY_PAUSES = (0, 0)
+        self.addCleanup(setattr, dotabuff, "RETRY_PAUSES", self._pauses)
+
+    def test_param(self):
+        self.assertEqual(period_param("month"), "")
+        self.assertEqual(period_param("week"), "week")
+        self.assertEqual(period_param("patch", "7.41f"), "patch_7.41")
+        self.assertEqual(period_param("patch", "7.42"), "patch_7.42")
+        self.assertEqual(period_param("patch", None), "", "патч неизвестен — месяц")
+
+    def test_month_has_no_query(self):
+        scraper = self.Scraper(load_fixture(), cold=False)
+        dotabuff.fetch_counters("Pudge", scraper=scraper)
+        self.assertEqual(scraper.urls, ["https://www.dotabuff.com/heroes/pudge/counters"])
+
+    def test_cold_session_is_warmed_up(self):
+        """Три 403 на адрес с параметром — обычный запрос — и снова проходит."""
+        scraper = self.Scraper(load_fixture())
+        report = dotabuff.fetch_counters("Pudge", scraper=scraper, period="patch", patch="7.41f")
+        self.assertEqual(report.countered_by[0].hero, "Mars")
+        self.assertIn("https://www.dotabuff.com/heroes/pudge/counters", scraper.urls)
+        self.assertTrue(scraper.urls[-1].endswith("?date=patch_7.41"))
+
+    def test_warm_session_is_not_warmed_again(self):
+        scraper = self.Scraper(load_fixture(), cold=False)
+        dotabuff.fetch_counters("Pudge", scraper=scraper, period="week")
+        self.assertEqual(scraper.urls, ["https://www.dotabuff.com/heroes/pudge/counters?date=week"])
+
+
 class MatchesPlayedTest(unittest.TestCase):
     """Число матчей в паре — из колонки «Matches Played» полной таблицы."""
 
@@ -239,7 +285,7 @@ class FetchManyTest(unittest.TestCase):
     def test_one_session_and_errors_kept_apart(self):
         sessions = []
 
-        def fetch(hero, scraper=None, limit=None, cache=None):
+        def fetch(hero, scraper=None, limit=None, cache=None, **period):
             sessions.append(scraper)
             if hero == "Nobody":
                 raise HeroNotFound(hero)

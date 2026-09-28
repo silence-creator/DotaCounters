@@ -115,6 +115,16 @@ class FetchWithCacheTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.dir, True)
         self.cache = PageCache(self.dir, clock=Clock())
 
+    def test_periods_are_cached_apart(self):
+        """Неделя и месяц — разные цифры, из кеша не должна прийти чужая."""
+        scraper = Scraper(load_fixture())
+        fetch_counters("Drow Ranger", scraper=scraper, cache=self.cache)
+        fetch_counters("Drow Ranger", scraper=scraper, cache=self.cache, period="week")
+        self.assertEqual(scraper.calls, 2)
+        fetch_counters("Drow Ranger", scraper=scraper, cache=self.cache, period="week")
+        self.assertEqual(scraper.calls, 2)
+        self.assertEqual(sorted(os.listdir(self.dir)), ["drow-ranger.json", "drow-ranger@week.json"])
+
     def test_second_fetch_does_not_touch_the_network(self):
         scraper = Scraper(load_fixture())
         first = fetch_counters("Drow Ranger", scraper=scraper, limit=5, cache=self.cache)

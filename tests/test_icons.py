@@ -12,9 +12,10 @@ from PIL import Image
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotacounters.icons import (  # noqa: E402
-    LOCAL_ICON_PREFIX, draw_local_icon, fit_to_box, is_glyph, rasterize_svg,
-    thicken, tint,
+    LOCAL_ICON_PREFIX, banned, draw_local_icon, fit_to_box, is_glyph, portrait_url,
+    rasterize_svg, rounded, thicken, tint,
 )
+from dotacounters.heroes import ALL_HEROES  # noqa: E402
 from dotacounters.patches import (  # noqa: E402
     ICON_CDN, ability_icon_url, hero_icon_url, item_icon_url, stat_icon_url,
 )
@@ -219,6 +220,31 @@ class FitToBoxTest(unittest.TestCase):
         self.assertEqual(img.getpixel((0, 8))[3], 0, "левый край должен быть прозрачным")
         self.assertEqual(img.getpixel((23, 8))[3], 0, "правый край должен быть прозрачным")
         self.assertEqual(img.getpixel((12, 8))[:3], (255, 0, 0), "центр — сама картинка")
+
+
+class PortraitTest(unittest.TestCase):
+    """Портреты героев для нового интерфейса."""
+
+    def test_url_uses_valve_key(self):
+        self.assertTrue(portrait_url("Shadow Fiend").endswith("/heroes/nevermore.png"),
+                        "у Valve свои внутренние имена")
+        self.assertTrue(portrait_url("Zeus").endswith("/heroes/zuus.png"))
+        self.assertIsNone(portrait_url("Незнакомец"))
+
+    def test_every_hero_has_a_portrait(self):
+        self.assertEqual([h for h in ALL_HEROES if portrait_url(h) is None], [])
+
+    def test_rounded_corners_are_transparent(self):
+        img = rounded(Image.new("RGB", (64, 36), (200, 50, 50)), 4)
+        self.assertEqual(img.getpixel((0, 0))[3], 0)
+        self.assertEqual(img.getpixel((32, 18))[3], 255)
+
+    def test_banned_is_grey_and_crossed(self):
+        img = banned(Image.new("RGB", (64, 36), (200, 50, 50)))
+        r, g, b, _ = img.getpixel((5, 5))
+        self.assertEqual(r, g, "серый")
+        self.assertLess(r, 120, "притемнённый")
+        self.assertNotEqual(img.getpixel((32, 18))[:3], (r, g, b), "по диагонали — черта")
 
 
 if __name__ == "__main__":

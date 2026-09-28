@@ -15,6 +15,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 from .config import cache_dir
 from .net import create_scraper
+from .roles import CDN_KEYS
 
 #: Адреса с этим префиксом не качаются, а рисуются здесь же — для значков,
 #: которых нет на CDN Valve.
@@ -57,6 +58,42 @@ def fit_to_box(img: Image.Image, box: tuple) -> Image.Image:
     canvas = Image.new("RGBA", box, (0, 0, 0, 0))
     canvas.paste(img, ((box_w - size[0]) // 2, (box_h - size[1]) // 2), img)
     return canvas
+
+
+# ── Портреты героев ───────────────────────────────────────────────────────────
+
+#: Портреты Valve — 256×144 (16:9), в нужный размер ужимаются без полей.
+PORTRAIT_CDN = "https://cdn.cloudflare.steamstatic.com/apps/dota2/images/dota_react/heroes/%s.png"
+
+
+def portrait_url(hero: str) -> str | None:
+    """Адрес портрета героя по имени; незнакомый герой — None."""
+    key = CDN_KEYS.get(hero)
+    return PORTRAIT_CDN % key if key else None
+
+
+def rounded(img: Image.Image, radius: int) -> Image.Image:
+    """Скруглить углы прозрачностью — под ними виден фон виджета."""
+    img = img.convert("RGBA")
+    mask = Image.new("L", img.size, 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, img.width - 1, img.height - 1),
+                                           radius=radius, fill=255)
+    img.putalpha(ImageChops.multiply(img.getchannel("A"), mask))
+    return img
+
+
+def banned(img: Image.Image, line=(212, 106, 85)) -> Image.Image:
+    """Портрет забаненного героя: серый, притемнённый и перечёркнутый."""
+    img = img.convert("RGBA")
+    alpha = img.getchannel("A")
+    # 0.75: на графитовом фоне героя ещё можно узнать, но ясно, что он выбыл
+    grey = img.convert("L").point(lambda v: int(v * 0.75)).convert("RGBA")
+    grey.putalpha(alpha)
+    width = max(2, img.height // 14)
+    ImageDraw.Draw(grey).line((img.width * 0.1, img.height * 0.9,
+                               img.width * 0.9, img.height * 0.1),
+                              fill=line + (255,), width=width)
+    return grey
 
 
 def draw_local_icon(name: str) -> Image.Image | None:

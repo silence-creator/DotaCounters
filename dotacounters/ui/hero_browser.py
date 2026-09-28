@@ -4,11 +4,15 @@ import tkinter as tk
 from tkinter import ttk
 
 from ..heroes import ALL_HEROES
+from .dpi import px_size
+from .style import make_fonts
 from .winapi import set_title_bar_color
 
 
 class HeroBrowserModal(tk.Toplevel):
-    def __init__(self, parent, theme: dict, tr: dict, on_select=None):
+    def __init__(self, parent, theme: dict, tr: dict, on_select=None, fonts=None):
+        self.F = fonts or make_fonts(parent)
+
         super().__init__(parent)
         self.T = theme
         self.tr = tr
@@ -17,8 +21,8 @@ class HeroBrowserModal(tk.Toplevel):
         self.title(tr["hb_title"])
         self.configure(bg=self.T["BG_DARK"])
         self.resizable(True, True)
-        self.minsize(520, 560)
-        self.geometry("620x660")
+        self.minsize(*px_size((520, 560)))
+        self.geometry("%dx%d" % px_size((620, 660)))
         self.transient(parent)
         self.grab_set()
         self._center(parent)
@@ -41,16 +45,15 @@ class HeroBrowserModal(tk.Toplevel):
         # Header
         hdr = tk.Frame(self, bg=T["BG_DARK"])
         hdr.grid(row=0, column=0, sticky="ew", padx=16, pady=(14, 0))
-        tk.Frame(hdr, bg=T["ACCENT"], width=4).pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
         left = tk.Frame(hdr, bg=T["BG_DARK"])
         left.pack(side=tk.LEFT)
         tk.Label(left, text=tr["hb_title"],
-                 font=("Courier New", 18, "bold"),
-                 fg=T["ACCENT"], bg=T["BG_DARK"]).pack(anchor="w")
-        tk.Label(left, text=f"  {len(ALL_HEROES)} {tr['hb_sorted']}",
-                 font=("Courier New", 9), fg=T["TEXT_DIM"], bg=T["BG_DARK"]).pack(anchor="w")
+                 font=self.F["h1"],
+                 fg=T["TEXT"], bg=T["BG_DARK"]).pack(anchor="w")
+        tk.Label(left, text=f"{len(ALL_HEROES)} {tr['hb_sorted']}",
+                 font=self.F["small"], fg=T["TEXT_DIM"], bg=T["BG_DARK"]).pack(anchor="w")
 
-        close_btn = tk.Button(hdr, text="✕", font=("Courier New", 12, "bold"),
+        close_btn = tk.Button(hdr, text="✕", font=self.F["h2"],
                               bg=T["BG_DARK"], fg=T["TEXT_DIM"],
                               activebackground=T["BG_DARK"], activeforeground=T["ACCENT2"],
                               relief="flat", bd=0, cursor="hand2", command=self.destroy)
@@ -71,7 +74,7 @@ class HeroBrowserModal(tk.Toplevel):
         self._search_var = tk.StringVar()
         self._search_var.trace_add("write", self._on_search)
         self._filter_entry = tk.Entry(ei, textvariable=self._search_var,
-                                      font=("Courier New", 11),
+                                      font=self.F["input"],
                                       bg=T["BG_PANEL"], fg=T["TEXT_PRIMARY"],
                                       insertbackground=T["ACCENT"],
                                       relief="flat", bd=5, highlightthickness=0)
@@ -93,19 +96,10 @@ class HeroBrowserModal(tk.Toplevel):
         card.columnconfigure(0, weight=1)
         card.rowconfigure(0, weight=1)
 
-        style = ttk.Style()
-        style.configure("HB.Vertical.TScrollbar",
-                        background=T["SCROLLBAR_BG"], troughcolor=T["SCROLLBAR_BG"],
-                        bordercolor=T["SCROLLBAR_BG"], darkcolor=T["SCROLLBAR_BG"],
-                        lightcolor=T["SCROLLBAR_BG"], arrowcolor=T["TEXT_DIM"],
-                        relief="flat", borderwidth=0)
-        style.map("HB.Vertical.TScrollbar",
-                  background=[("active", T["BG_PANEL"]), ("disabled", T["SCROLLBAR_BG"])],
-                  arrowcolor=[("active", T["ACCENT"])])
-
+        # Полоса прокрутки — общий тонкий стиль главного окна (app._apply_theme_styles)
         self._canvas = tk.Canvas(card, bg=T["BG_CARD"], bd=0, highlightthickness=0)
         self._canvas.grid(row=0, column=0, sticky="nsew")
-        sb = ttk.Scrollbar(card, orient="vertical", style="HB.Vertical.TScrollbar",
+        sb = ttk.Scrollbar(card, orient="vertical", style="Dark.Vertical.TScrollbar",
                            command=self._canvas.yview)
         sb.grid(row=0, column=1, sticky="ns")
         self._canvas.configure(yscrollcommand=sb.set)
@@ -123,7 +117,7 @@ class HeroBrowserModal(tk.Toplevel):
             self.bind(seq, self._on_mousewheel)
 
         self._count_label = tk.Label(self, text=f"{tr['hb_showing']} {len(ALL_HEROES)} {tr['hb_heroes']}",
-                                     font=("Courier New", 8), fg=T["TEXT_MUTED"], bg=T["BG_DARK"])
+                                     font=self.F["small"], fg=T["TEXT_MUTED"], bg=T["BG_DARK"])
         self._count_label.grid(row=4, column=0, sticky="w", padx=18, pady=(0, 6))
         self._render_heroes(ALL_HEROES)
 
@@ -160,7 +154,7 @@ class HeroBrowserModal(tk.Toplevel):
             w.destroy()
         if not heroes:
             tk.Label(self._inner, text=tr["hb_no_match"],
-                     font=("Courier New", 10), fg=T["TEXT_DIM"],
+                     font=self.F["body"], fg=T["TEXT_DIM"],
                      bg=T["BG_CARD"]).pack(anchor="w", padx=14)
             self._canvas.yview_moveto(0)
             return
@@ -171,14 +165,14 @@ class HeroBrowserModal(tk.Toplevel):
         for letter in sorted(groups.keys()):
             lf = tk.Frame(self._inner, bg=T["BG_CARD"])
             lf.pack(fill=tk.X, padx=10, pady=(10, 2))
-            tk.Label(lf, text=f" {letter} ", font=("Courier New", 10, "bold"),
+            tk.Label(lf, text=f" {letter} ", font=self.F["body_b"],
                      fg=T["ACCENT3"], bg=T["BG_PANEL"], padx=6, pady=1).pack(side=tk.LEFT)
             tk.Frame(lf, bg=T["BORDER"], height=1).pack(
                 side=tk.LEFT, fill=tk.X, expand=True, padx=(6, 0), pady=6)
             gf = tk.Frame(self._inner, bg=T["BG_CARD"])
             gf.pack(fill=tk.X, padx=10, pady=(0, 4))
             for i, hero in enumerate(groups[letter]):
-                btn = tk.Button(gf, text=hero, font=("Courier New", 10),
+                btn = tk.Button(gf, text=hero, font=self.F["body"],
                                 bg=T["BG_PANEL"], fg=T["TEXT_PRIMARY"],
                                 activebackground=T["GLOW"], activeforeground=T["ACCENT"],
                                 relief="flat", bd=0, padx=10, pady=5, anchor="w",

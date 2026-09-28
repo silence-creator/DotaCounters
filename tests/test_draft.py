@@ -198,6 +198,12 @@ class RarePairsTest(unittest.TestCase):
         self.assertAlmostEqual(totals["Chen"], 1.0, msg="6.4 из редкой пары не в счёт")
         self.assertEqual([p.hero for p in result.picks], ["Axe", "Chen"])
 
+    def test_pick_knows_its_least_played_pair(self):
+        reports = {"A": FakeReport([("Axe", 1.0, 50000)]),
+                   "B": FakeReport([("Axe", 1.0, 7000)])}
+        self.assertEqual(analyse(reports).picks[0].matches, 7000)
+        self.assertIsNone(analyse({"A": FakeReport([("Axe", 1.0)])}).picks[0].matches)
+
     def test_threshold_itself_is_enough(self):
         reports = {"A": FakeReport([("Chen", 3.0, MIN_MATCHES)])}
         self.assertAlmostEqual(analyse(reports).picks[0].total, 3.0)

@@ -1,4 +1,4 @@
-"""Оверлей: узкое окно поверх игры с поиском контрпиков и драфтом.
+"""Оверлей: узкое окно поверх игры — контрпики, All Pick и Captains Mode.
 
 Работает, когда Dota запущена в окне или «в окне без рамки». Поверх
 полноэкранного исключительного режима Windows чужие окна не показывает.
@@ -6,54 +6,41 @@
 Окно без рамки: перетаскивается за шапку, Esc прячет. Показывается и
 прячется глобальной клавишей (hotkey.py) или кнопкой в главном окне.
 
-Состав драфта общий с вкладкой «Драфт» главного окна (draft.DraftBoard):
-героя, добавленного здесь, видно там, и наоборот. Страницы врагов качает
-главное окно — оверлей только сообщает ему об изменении состава.
+Данные общие с главным окном: состав All Pick (app._board), драфт Captains
+Mode (app._cm), кеш страниц и период. Страницы драфтов качает главное окно —
+оверлей сообщает ему об изменении (_draft_changed / _cm_changed) и получает
+refresh(). Поиск контрпиков ходит своей сессией.
 """
 
 import threading
 import tkinter as tk
-from tkinter import font as tkfont
-
-from PIL import ImageTk
 
 from ..dotabuff import DotabuffError, FetchError, HeroNotFound, ParseError, fetch_counters
-from ..draft import GROUPS
+from ..draft import CM_ORDER, GROUPS, SIDES
 from ..heroes import best_match
-from ..icons import HERO_ICON_BOX, load_icon
-from ..net import create_scraper
+from ..hotkey import format_hotkey
 from ..recent import sane_position
-from .role_menu import role_menu
+from .dpi import px
 from .suggestions import HeroSuggestions
+from .widgets import EntryBox, ScrollArea, Segmented, button, separator
 from .winapi import bring_to_front
 
-WIDTH, HEIGHT = 340, 600
-FONT = "Courier New"
+WIDTH, HEIGHT = 340, 620
+ROWS = 6                     # строк в списках оверлея — дальше не влезает
 
 
 class Overlay:
     """Окно создаётся при первом показе и дальше только прячется."""
 
-    def __init__(self, root, theme, tr, limit, hotkey_label, board,
-                 on_draft_change, position=None, on_move=None, on_search=None,
-                 pages=None):
-        self.root = root
-        self.board = board                   # общий состав драфта
-        self._pages = pages                  # кеш страниц Dotabuff, общий с главным окном
-        self._on_draft_change = on_draft_change  # главное окно докачает и перерисует
-        self.T, self.tr = theme, tr
-        self._limit = limit                  # функция: сколько строк показывать
-        self.hotkey_label = hotkey_label
+    def __init__(self, app, position=None):
+        self.app = app
+        self.root = app.root
         self._position = position
-        self._on_move = on_move              # сохранить место окна
-        self._on_search = on_search          # запомнить героя в недавних
         self.win = None
-
-        self.mode = "counters"               # counters | draft
+        self.mode = "counters"               # counters | draft | cm
         self._counters = None                # (герой, отчёт или ошибка) или None
-        self._counters_loading = None        # герой, чья страница качается
-        self._group = "enemies"              # куда пойдёт набранный в драфте герой
-        self._images = []
+        self._counters_loading = None
+        self._group = "enemies"              # куда пойдёт набранный в All Pick герой
         self._token = 0                      # отбросить устаревший ответ поиска
         # Своя сессия для поиска контрпиков — так Cloudflare реже отбивает
         # запросы. По одному за раз: сессия не рассчитана на несколько потоков.
@@ -106,11 +93,9 @@ class Overlay:
         bring_to_front(self.win)
         self.win.focus_force()
         self.entry.focus_set()
-        self.entry.select_range(0, tk.END)
 
-    def restyle(self, theme, tr):
-        """Тема или язык сменились — пересобрать окно, сохранив содержимое."""
-        self.T, self.tr = theme, tr
+    def restyle(self):
+        """Тема, язык или клавиша сменились — пересобрать окно, сохранив содержимое."""
         if not self._alive():
             return
         was_visible = self.visible
@@ -123,10 +108,16 @@ class Overlay:
         else:
             self.win.withdraw()
 
+    def refresh(self):
+        """Драфт изменился в главном окне или докачались страницы — перерисовать."""
+        if self._alive() and self.mode in ("draft", "cm"):
+            self._render()
+
     # ── Окно ──────────────────────────────────────────────────────────────────
 
     def _build(self):
-        T, tr = self.T, self.tr
+        app = self.app
+        T, tr, F = app.T, app.tr, app.F
         win = tk.Toplevel(self.root)
         self.win = win
         win.title("DotaCounters Overlay")     # заголовка не видно, но по нему окно находят
@@ -134,111 +125,74 @@ class Overlay:
         # Непрозрачное: сквозь полупрозрачное окно текст позади ложился прямо
         # на поле ввода и мешал читать.
         win.attributes("-topmost", True)
-        win.configure(bg=T["ACCENT"])         # тонкая рамка цветом акцента
-        win.geometry("%dx%d%s" % (WIDTH, HEIGHT, self._start_position()))
+        win.configure(bg=T["LINE"])           # рамка в 1 пиксель
+        win.geometry("%dx%d%s" % (px(WIDTH), px(HEIGHT), self._start_position()))
         win.bind("<Escape>", lambda e: self.hide())
 
-        body = tk.Frame(win, bg=T["BG_DARK"])
+        body = tk.Frame(win, bg=T["BG"])
         body.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
         self._body = body
 
         # Шапка — за неё окно и таскают
-        head = tk.Frame(body, bg=T["BG_PANEL"], cursor="fleur")
+        head = tk.Frame(body, bg=T["TOPBAR"], cursor="fleur", height=34)
         head.pack(fill=tk.X)
-        title = tk.Label(head, text="◈ DOTACOUNTERS", font=(FONT, 9, "bold"),
-                         fg=T["ACCENT"], bg=T["BG_PANEL"], cursor="fleur")
-        title.pack(side=tk.LEFT, padx=10, pady=6)
-        tk.Button(head, text="✕", font=(FONT, 9, "bold"), bg=T["BG_PANEL"], fg=T["TEXT_DIM"],
-                  activebackground=T["BG_PANEL"], activeforeground=T["ACCENT2"],
-                  relief="flat", bd=0, padx=10, cursor="hand2",
-                  command=self.hide).pack(side=tk.RIGHT)
+        head.pack_propagate(False)
+        title = tk.Label(head, text="DotaCounters", font=F["h2"], fg=T["TEXT"], bg=T["TOPBAR"],
+                         cursor="fleur")
+        title.pack(side=tk.LEFT, padx=(12, 0))
+        button(head, T, F, "×", self.hide, kind="link", font="h2", bg=T["TOPBAR"]).pack(
+            side=tk.RIGHT, padx=4)
         for widget in (head, title):
             widget.bind("<ButtonPress-1>", self._drag_start)
             widget.bind("<B1-Motion>", self._drag)
             widget.bind("<ButtonRelease-1>", self._drag_end)
+        tk.Frame(body, bg=T["LINE"], height=1).pack(fill=tk.X)
 
-        # Режимы
-        modes = tk.Frame(body, bg=T["BG_DARK"])
-        modes.pack(fill=tk.X, padx=10, pady=(10, 6))
-        self._mode_btns = {}
-        for key, label in (("counters", tr["ov_counters"]), ("draft", tr["ov_draft"])):
-            btn = tk.Button(modes, text=label, font=(FONT, 9, "bold"), relief="flat", bd=0,
-                            padx=10, pady=4, cursor="hand2",
-                            command=lambda k=key: self._set_mode(k))
-            btn.pack(side=tk.LEFT, padx=(0, 6))
-            self._mode_btns[key] = btn
-        self._clear_btn = tk.Button(modes, text=tr["ov_clear"], font=(FONT, 8, "bold"),
-                                    bg=T["BG_DARK"], fg=T["TEXT_DIM"],
-                                    activebackground=T["BG_DARK"], activeforeground=T["ACCENT2"],
-                                    relief="flat", bd=0, cursor="hand2", command=self._clear)
+        # Подвал пакуется раньше содержимого: у окна жёсткий размер, и pack при
+        # нехватке места урезает то, что упаковано последним.
+        tk.Label(body, text=tr["ov_footer"].format(key=format_hotkey(app._hotkey_text)),
+                 font=F["tiny"], fg=T["TEXT3"], bg=T["BG"]).pack(side=tk.BOTTOM, pady=(0, 6))
 
-        # Драфт: куда пойдёт герой и роль. Контейнер упакован всегда, а строка в
-        # нём — только в режиме драфта: иначе pack поставил бы её в самый конец.
-        box = tk.Frame(body, bg=T["BG_DARK"])
-        box.pack(fill=tk.X, padx=10)
-        self._draft_row = tk.Frame(box, bg=T["BG_DARK"])
-        self._group_btns = {}
-        for group in GROUPS:
-            btn = tk.Button(self._draft_row, text=tr["ov_group_" + group], font=(FONT, 8, "bold"),
-                            relief="flat", bd=0, padx=8, pady=2, cursor="hand2",
-                            command=lambda g=group: self._set_group(g))
-            btn.pack(side=tk.LEFT, padx=(0, 4))
-            self._group_btns[group] = btn
-        self._role_menu = role_menu(self._draft_row, T, tr, self.board.role, self._set_role,
-                                    font=(FONT, 8, "bold"))
-        self._role_menu.pack(side=tk.RIGHT)
-        self._set_group(self._group, focus=False)   # поля ввода ещё нет
+        inner = tk.Frame(body, bg=T["BG"])
+        inner.pack(fill=tk.BOTH, expand=True, padx=12, pady=(10, 4))
+        self._mode_seg = Segmented(inner, T, F, [("counters", tr["ov_counters"]),
+                                                 ("draft", tr["ov_draft"]),
+                                                 ("cm", tr["ov_cm"])],
+                                   self.mode, self._set_mode, font="small_b", padx=8)
+        self._mode_seg.pack(fill=tk.X)
 
-        self._hint = tk.Label(body, text="", font=(FONT, 8), fg=T["TEXT_DIM"], bg=T["BG_DARK"])
-        self._hint.pack(anchor="w", padx=10)
+        # Строка управления режимом (группа в All Pick) — контейнер упакован
+        # всегда, содержимое меняется: иначе pack поставил бы его в конец.
+        self._controls = tk.Frame(inner, bg=T["BG"])
+        self._controls.pack(fill=tk.X, pady=(8, 0))
 
-        frame = tk.Frame(body, bg=T["ACCENT"], padx=1, pady=1)
-        frame.pack(fill=tk.X, padx=10, pady=(2, 8))
-        self.entry = tk.Entry(frame, font=(FONT, 12), bg=T["BG_PANEL"], fg=T["TEXT_PRIMARY"],
-                              insertbackground=T["ACCENT"], relief="flat", bd=5,
-                              highlightthickness=0)
-        self.entry.pack(fill=tk.X)
-        self._suggest = HeroSuggestions(body, self.entry, T, (FONT, 11), on_accept=self._accept)
+        self._hint = tk.Label(inner, text="", font=F["small"], fg=T["TEXT3"], bg=T["BG"])
+        self._hint.pack(anchor="w", pady=(8, 3))
+        self._box = EntryBox(inner, T, F, font="body")
+        self._box.pack(fill=tk.X)
+        self.entry = self._box.entry
+        self._suggest = HeroSuggestions(inner, self.entry, T, F["body"], on_accept=self._accept)
         # Esc сперва закрывает подсказки и только потом прячет окно
         self.entry.bind("<Escape>", self._on_escape)
-        self.entry.bind("<FocusOut>", lambda e: self._suggest.hide_later())
+        self.entry.bind("<FocusOut>", lambda e: self._suggest.hide_later(), add="+")
+        self._status = tk.Label(inner, text="", font=F["small"], fg=T["TEXT3"], bg=T["BG"],
+                                anchor="w", justify=tk.LEFT, wraplength=WIDTH - 40)
+        self._status.pack(fill=tk.X, pady=(4, 0))
 
-        self._status = tk.Label(body, text="", font=(FONT, 8, "bold"), anchor="w",
-                                fg=T["TEXT_DIM"], bg=T["BG_DARK"])
-        self._status.pack(fill=tk.X, padx=10)
-
-        # Подвал пакуется раньше вывода: у окна жёсткий размер, и pack при
-        # нехватке места урезает то, что упаковано последним.
-        tk.Label(body, text=tr["ov_footer"].format(key=self.hotkey_label),
-                 font=(FONT, 7), fg=T["TEXT_MUTED"], bg=T["BG_DARK"]).pack(
-                     side=tk.BOTTOM, pady=(0, 6))
-
-        self.area = tk.Text(body, wrap=tk.WORD, font=(FONT, 10), bg=T["BG_CARD"],
-                            fg=T["TEXT_PRIMARY"], relief="flat", bd=0, padx=8, pady=8,
-                            spacing2=2, highlightthickness=1, width=1, height=1,
-                            highlightbackground=T["BORDER"], cursor="arrow")
-        self.area.pack(fill=tk.BOTH, expand=True, padx=10, pady=(4, 6))
-        for tag, colour in (("bad", T["ACCENT2"]), ("good", T["ACCENT"]),
-                            ("title", T["ACCENT3"]), ("hero", T["TEXT_PRIMARY"]),
-                            ("dim", T["TEXT_DIM"]), ("error", T["ACCENT2"]),
-                            ("enemy", T["ACCENT3"])):
-            self.area.tag_config(tag, foreground=colour)
-        for tag in ("bad", "good", "title"):
-            self.area.tag_config(tag, font=(FONT, 10, "bold"))
-        self.area.tag_config("enemy", background=T["BG_PANEL"])
-        self.area.tag_config("ally", foreground=T["ACCENT"], background=T["BG_PANEL"])
-        self.area.tag_config("ban", foreground=T["TEXT_DIM"], background=T["BG_PANEL"],
-                             overstrike=True)
-
+        self._area = ScrollArea(inner, T, app._scrollables)
+        self._area.pack(fill=tk.BOTH, expand=True, pady=(6, 0))
+        # Колесо мыши в оверлее: у окна своя привязка
+        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            win.bind(seq, app._on_wheel)
         self._set_mode(self.mode)
 
     def _start_position(self):
         pos = sane_position(self._position, self.root.winfo_screenwidth(),
-                            self.root.winfo_screenheight(), WIDTH, HEIGHT)
+                            self.root.winfo_screenheight(), px(WIDTH), px(HEIGHT))
         if pos:
             return pos
         # По умолчанию — справа сверху, где в Dota меньше всего важного
-        return "+%d+%d" % (max(0, self.root.winfo_screenwidth() - WIDTH - 40), 120)
+        return "+%d+%d" % (max(0, self.root.winfo_screenwidth() - px(WIDTH + 40)), px(120))
 
     def _drag_start(self, event):
         self._drag_from = (event.x_root - self.win.winfo_x(), event.y_root - self.win.winfo_y())
@@ -249,8 +203,8 @@ class Overlay:
 
     def _drag_end(self, event):
         self._position = "+%d+%d" % (self.win.winfo_x(), self.win.winfo_y())
-        if self._on_move:
-            self._on_move(self._position)
+        from ..config import update_config
+        update_config(overlay_pos=self._position)
 
     def _on_escape(self, event):
         if self._suggest.visible:
@@ -262,99 +216,74 @@ class Overlay:
     # ── Режимы и ввод ─────────────────────────────────────────────────────────
 
     def _set_mode(self, mode):
-        T = self.T
+        app = self.app
+        T, tr, F = app.T, app.tr, app.F
         self.mode = mode
-        for key, btn in self._mode_btns.items():
-            active = key == mode
-            btn.config(bg=T["ACCENT"] if active else T["BG_PANEL"],
-                       fg=T["BG_DARK"] if active else T["TEXT_DIM"],
-                       activebackground=T["ACCENT"], activeforeground=T["BG_DARK"])
+        self._mode_seg.set(mode)
+        for w in self._controls.winfo_children():
+            w.destroy()
         if mode == "draft":
-            self._clear_btn.pack(side=tk.RIGHT)
-            self._draft_row.pack(fill=tk.X, pady=(0, 6))
+            Segmented(self._controls, T, F, [(g, tr["ov_group_" + g]) for g in GROUPS],
+                      self._group, self._set_group, font="small_b", padx=9).pack(side=tk.LEFT)
+            button(self._controls, T, F, tr["ov_clear"], self._clear, kind="link",
+                   font="small_b").pack(side=tk.RIGHT)
+        elif mode == "cm":
+            button(self._controls, T, F, tr["cm_undo"], self._cm_undo, kind="link",
+                   font="small_b").pack(side=tk.LEFT)
+            button(self._controls, T, F, tr["cm_reset"], self._cm_reset, kind="link",
+                   font="small_b").pack(side=tk.RIGHT)
         else:
-            self._clear_btn.pack_forget()
-            self._draft_row.pack_forget()
-        self._hint.config(text=self.tr["ov_hint_draft" if mode == "draft" else "ov_hint_counters"])
-        self._set_status("")
+            tk.Frame(self._controls, bg=T["BG"], height=1).pack()
+        self._status.config(text="")
         self._render()
         if self.visible:
             self.entry.focus_set()
 
+    def _set_group(self, group):
+        self._group = group
+        self.entry.focus_set()
+
     def _accept(self, typed):
         hero = best_match(typed)
-        self.entry.delete(0, tk.END)
+        self._box.clear()
         if not hero:
             return
         if self.mode == "draft":
             self._add_to_board(hero)
+        elif self.mode == "cm":
+            self._cm_play(hero)
         else:
             self._search(hero)
 
-    def _set_status(self, text, colour=None):
+    def _set_status(self, text, color=None):
         if self._alive():
-            self._status.config(text=text, fg=colour or self.T["TEXT_DIM"])
+            self._status.config(text=text, fg=color or self.app.T["TEXT3"])
 
-    def _set_group(self, group, focus=True):
-        T = self.T
-        self._group = group
-        for key, btn in self._group_btns.items():
-            active = key == group
-            btn.config(bg=T["ACCENT3"] if active else T["BG_PANEL"],
-                       fg=T["BG_DARK"] if active else T["TEXT_DIM"],
-                       activebackground=T["ACCENT3"], activeforeground=T["BG_DARK"])
-        if focus and self.visible:
-            self.entry.focus_set()
-
-    def _set_role(self, role):
-        self.board.role = role
-        self._on_draft_change()
-
-    def _clear(self):
-        self.board.clear()
-        self._set_status("")
-        self._on_draft_change()
-
-    def refresh(self):
-        """Состав или загрузка изменились — перерисовать, если окно есть."""
-        if self._alive():
-            self._role_menu.show_role(self.board.role)
-            if self.mode == "draft":
-                self._render()
-
-    # ── Сеть ──────────────────────────────────────────────────────────────────
+    # ── Контрпики ─────────────────────────────────────────────────────────────
 
     def _fetch(self, hero):
-        """Страница героя через общую сессию; ошибка возвращается как результат."""
+        """Страница героя через свою сессию; ошибка возвращается как результат."""
+        app = self.app
         with self._net_lock:
             if self._scraper is None:
+                from ..net import create_scraper
                 self._scraper = create_scraper()
             try:
-                return fetch_counters(hero, scraper=self._scraper, limit=self._limit(),
-                                      cache=self._pages)
+                return fetch_counters(hero, scraper=self._scraper, limit=app._limit,
+                                      cache=app._pages, **app._fetch_options())
             except DotabuffError as exc:
                 return exc
             except Exception as exc:
                 return FetchError(str(exc))
 
-    @staticmethod
-    def _warm_icons(rows):
-        """Иконки грузятся в фоне, чтобы вывод потом не ждал сеть."""
-        for row in rows:
-            if row.icon_url:
-                load_icon(row.icon_url, box=HERO_ICON_BOX)
-
     def _search(self, hero):
         self._token += 1
         token = self._token
         self._counters_loading = hero
-        self._set_status(self.tr["ov_loading"], self.T["ACCENT3"])
         self._render()
 
         def work():
             outcome = self._fetch(hero)
-            if not isinstance(outcome, DotabuffError):
-                self._warm_icons(outcome.countered_by + outcome.counters)
             self.root.after(0, self._searched, token, hero, outcome)
         threading.Thread(target=work, daemon=True).start()
 
@@ -363,140 +292,231 @@ class Overlay:
             return  # пока качалось, успели спросить другого героя
         self._counters_loading = None
         self._counters = (hero, outcome)
-        self._set_status("")
-        if not isinstance(outcome, DotabuffError) and self._on_search:
-            self._on_search(hero)
+        if not isinstance(outcome, DotabuffError):
+            self.app._remember_hero(hero)
         self._render()
+
+    # ── All Pick ──────────────────────────────────────────────────────────────
 
     def _add_to_board(self, hero):
         """Герой — в выбранный список общего состава. Страницу докачает главное окно."""
-        tr, T, group = self.tr, self.T, self._group
-        outcome = self.board.add(group, hero)
+        app = self.app
+        tr, T, group = app.tr, app.T, self._group
+        outcome = app._board.add(group, hero)
         if outcome == "dup":
             self._set_status(tr["draft_dup"].format(hero=hero))
         elif outcome == "full":
-            self._set_status(tr["draft_full_group"].format(max=self.board.limit_of(group)),
-                             T["ACCENT2"])
+            self._set_status(tr["draft_full_group"].format(max=app._board.limit_of(group)),
+                             T["BAD"])
         elif outcome == "moved":
             self._set_status(tr["draft_moved"].format(hero=hero, group=tr["draft_row_" + group]),
-                             T["ACCENT3"])
+                             T["GOLD"])
         else:
             self._set_status("")
         if outcome in ("added", "moved"):
-            self._on_draft_change()
+            app._draft_changed()
 
-    def _remove_from_board(self, hero):
-        self.board.remove(hero)
-        self._on_draft_change()
+    def _clear(self):
+        self.app._board.clear()
+        self._set_status("")
+        self.app._draft_changed()
+
+    # ── Captains Mode ─────────────────────────────────────────────────────────
+
+    def _cm_play(self, hero):
+        app = self.app
+        outcome = app._cm.play(hero)
+        if outcome == "taken":
+            self._set_status(app.tr["cm_taken"].format(hero=hero), app.T["BAD"])
+            return
+        if outcome == "done":
+            self._set_status(app.tr["cm_done_hint"])
+            return
+        self._set_status("")
+        app._cm_changed()
+
+    def _cm_undo(self):
+        hero = self.app._cm.undo()
+        self._set_status(self.app.tr["cm_undone"].format(hero=hero) if hero else "")
+        self.app._cm_changed(fetch=False)
+
+    def _cm_reset(self):
+        self.app._cm.reset()
+        self._set_status("")
+        self.app._cm_changed(fetch=False)
 
     # ── Вывод ─────────────────────────────────────────────────────────────────
 
     def _render(self):
         if not self._alive():
             return
-        area = self.area
-        area.config(state=tk.NORMAL)
-        area.delete("1.0", tk.END)
-        self._images = []
+        area = self._area.inner
+        for w in area.winfo_children():
+            w.destroy()
         if self.mode == "draft":
-            self._render_draft()
+            self._render_draft(area)
+        elif self.mode == "cm":
+            self._render_cm(area)
         else:
-            self._render_counters()
-        area.config(state=tk.DISABLED)
+            self._render_counters(area)
+        self._area.to_top()
 
-    def _row(self, icon_url, hero, value, tag):
-        area = self.area
-        img = load_icon(icon_url, box=HERO_ICON_BOX) if icon_url else None
-        if img is not None:
-            photo = ImageTk.PhotoImage(img)
-            self._images.append(photo)
-            area.image_create(tk.END, image=photo, padx=2)
-        else:
-            area.insert(tk.END, "    ")
-        area.insert(tk.END, " %-18s" % hero[:18], "hero")
-        area.insert(tk.END, "%8s\n" % value, tag)
+    def _row(self, parent, hero, value, color):
+        app = self.app
+        T, F = app.T, app.F
+        separator(parent, T)
+        row = tk.Frame(parent, bg=T["BG"])
+        row.pack(fill=tk.X, pady=4)
+        tk.Label(row, image=app.photo(hero, (52, 29)), bg=T["BG"]).pack(side=tk.LEFT)
+        tk.Label(row, text=hero, font=F["name"], fg=T["TEXT"], bg=T["BG"]).pack(side=tk.LEFT,
+                                                                                padx=(10, 0))
+        tk.Label(row, text=app._signed(value), font=F["value"], fg=color, bg=T["BG"]).pack(
+            side=tk.RIGHT)
 
-    def _error_text(self, hero, exc):
-        tr = self.tr
-        if isinstance(exc, HeroNotFound):
-            return tr["ov_not_found"].format(hero=hero)
-        if isinstance(exc, ParseError):
-            return tr["ov_layout"]
-        return tr["ov_network"]
+    def _heading(self, parent, text, color=None, caption=""):
+        app = self.app
+        T, F = app.T, app.F
+        head = tk.Frame(parent, bg=T["BG"])
+        head.pack(fill=tk.X, pady=(10, 4))
+        tk.Label(head, text=text, font=F["h2"], fg=color or T["TEXT"], bg=T["BG"]).pack(
+            side=tk.LEFT)
+        if caption:
+            tk.Label(head, text=caption, font=F["small"], fg=T["TEXT3"], bg=T["BG"]).pack(
+                side=tk.RIGHT)
 
-    def _render_counters(self):
-        area, tr = self.area, self.tr
+    def _render_counters(self, area):
+        app = self.app
+        T, tr, F = app.T, app.tr, app.F
+        self._hint.config(text=tr["ov_hint_counters"])
         if self._counters_loading:
-            area.insert(tk.END, self._counters_loading.upper() + "\n", "title")
-            area.insert(tk.END, tr["ov_loading"] + "\n", "dim")
+            self._heading(area, self._counters_loading)
+            tk.Label(area, text=tr["loading"], font=F["body"], fg=T["GOLD"], bg=T["BG"]).pack(
+                anchor="w")
             return
         if not self._counters:
-            area.insert(tk.END, tr["ov_hint_counters"] + "\n", "dim")
             return
         hero, outcome = self._counters
         if isinstance(outcome, DotabuffError):
-            area.insert(tk.END, self._error_text(hero, outcome) + "\n", "error")
+            if isinstance(outcome, HeroNotFound):
+                text = tr["ov_not_found"].format(hero=hero)
+            elif isinstance(outcome, ParseError):
+                text = tr["ov_layout"]
+            else:
+                text = tr["ov_network"]
+            tk.Label(area, text=text, font=F["body"], fg=T["BAD"], bg=T["BG"]).pack(anchor="w")
             return
-        area.insert(tk.END, hero.upper() + "\n", "title")
-        for tag, label, rows in (("bad", tr["bad_against"], outcome.countered_by),
-                                 ("good", tr["good_against"], outcome.counters)):
-            area.insert(tk.END, "\n" + label + "\n", tag)
-            for m in rows:
-                self._row(m.icon_url, m.hero, m.win_rate, tag)
+        for rows, color, title in ((outcome.countered_by, T["BAD"],
+                                    tr["weak_against"].format(hero=hero)),
+                                   (outcome.counters, T["GOOD"],
+                                    tr["strong_against"].format(hero=hero))):
+            self._heading(area, title, color)
+            for m in rows[:ROWS]:
+                self._row(area, m.hero, abs(m.advantage_value or 0), color)
 
-    def _render_draft(self):
-        area, tr, board = self.area, self.tr, self.board
+    def _lineup_strip(self, parent, heroes, color, label, ban=False, on_click=None):
+        """Строка состава: подпись стороны и мини-портреты; щелчок убирает героя."""
+        app = self.app
+        T, F = app.T, app.F
+        line = tk.Frame(parent, bg=T["TOPBAR"])
+        line.pack(fill=tk.X, pady=2)
+        tk.Label(line, text=label, font=F["small_b"], fg=color, bg=T["TOPBAR"], width=8,
+                 anchor="w").pack(side=tk.LEFT, padx=(6, 0))
+        size = (30, 17) if ban else (40, 22)
+        for hero in heroes:
+            cell = tk.Label(line, image=app.photo(hero, size, "ban" if ban else None),
+                            bg=T["TOPBAR"], cursor="hand2" if on_click else "")
+            cell.pack(side=tk.LEFT, padx=(0, 3), pady=3)
+            if on_click:
+                cell.bind("<Button-1>", lambda e, h=hero: on_click(h))
+
+    def _render_draft(self, area):
+        app = self.app
+        T, tr, F, board = app.T, app.tr, app.F, app._board
+        self._hint.config(text=tr["ov_hint_draft"])
         if not any(board.groups.values()):
-            area.insert(tk.END, tr["ov_draft_empty"] + "\n", "dim")
+            tk.Label(area, text=tr["ov_draft_empty"], font=F["body"], fg=T["TEXT3"],
+                     bg=T["BG"]).pack(anchor="w")
             return
-
-        # Состав — «фишки» в строку: враги, союзники, баны; щелчок убирает героя.
-        # Переносим сами, по ширине: поле переносило бы по пробелу внутри имени,
-        # и «Crystal Maiden» разваливался на две строки.
-        measure = tkfont.Font(font=(FONT, 10)).measure
-        room = area.winfo_width() - 24
-        if room < 100:
-            room = WIDTH - 44          # окно ещё не разложено — берём по размеру
-        used, n = 0, 0
-        for group, style in (("enemies", "enemy"), ("allies", "ally"), ("bans", "ban")):
-            for hero in board.groups[group]:
-                tag = "chip_%d" % n
-                n += 1
-                if hero in board.loading:
-                    mark = "⟳"
-                elif hero in board.failed:
-                    mark = "!"
-                else:
-                    mark = "✕"
-                text = " %s %s " % (mark, hero)
-                width = measure(text + " ")
-                if used and used + width > room:
-                    area.insert(tk.END, "\n")
-                    used = 0
-                used += width
-                area.insert(tk.END, text, (style, tag))
-                area.tag_bind(tag, "<Button-1>", lambda e, h=hero: self._remove_from_board(h))
-                area.tag_bind(tag, "<Enter>", lambda e: self.area.config(cursor="hand2"))
-                area.tag_bind(tag, "<Leave>", lambda e: self.area.config(cursor="arrow"))
-                area.insert(tk.END, " ")
-        area.insert(tk.END, "\n")
-
-        for hero in board.enemies:
-            if hero in board.failed:
-                area.insert(tk.END, tr["ov_failed"].format(hero=hero) + "\n", "error")
-
-        result = board.analyse(limit=self._limit())
+        box = tk.Frame(area, bg=T["TOPBAR"], highlightthickness=1, highlightbackground=T["LINE"])
+        box.pack(fill=tk.X)
+        remove = lambda h: (board.remove(h), app._draft_changed())  # noqa: E731
+        self._lineup_strip(box, board.groups["enemies"], T["BAD"], tr["ov_group_enemies"],
+                           on_click=remove)
+        if board.groups["allies"]:
+            self._lineup_strip(box, board.groups["allies"], T["GOOD"], tr["ov_group_allies"],
+                               on_click=remove)
+        if board.groups["bans"]:
+            self._lineup_strip(box, board.groups["bans"], T["TEXT2"], tr["ov_group_bans"],
+                               ban=True, on_click=remove)
+        loading = [h for h in board.enemies if h in board.loading]
+        failed = [h for h in board.enemies if h in board.failed]
+        if loading:
+            tk.Label(area, text=tr["loading"], font=F["small"], fg=T["GOLD"], bg=T["BG"]).pack(
+                anchor="w", pady=(6, 0))
+        for hero in failed:
+            tk.Label(area, text=tr["ov_failed"].format(hero=hero), font=F["small"], fg=T["BAD"],
+                     bg=T["BG"]).pack(anchor="w")
+        result = board.analyse(limit=min(app._limit, ROWS))
         if result is None:
-            if board.loading:
-                area.insert(tk.END, "\n" + tr["ov_loading"] + "\n", "dim")
             return
         if not result.picks:
-            area.insert(tk.END, "\n" + tr["ov_nothing"] + "\n", "error")
+            tk.Label(area, text=tr["ov_nothing"], font=F["small"], fg=T["BAD"], bg=T["BG"]).pack(
+                anchor="w", pady=(6, 0))
             return
-        for tag, label, rows in (("good", tr["ov_pick"], result.picks),
-                                 ("bad", tr["ov_avoid"], result.avoid)):
-            area.insert(tk.END, "\n" + label + "\n", tag)
-            for pick in rows:
-                self._row(pick.icon_url, pick.hero, "%+.2f%%" % pick.total, tag)
-        if board.loading:
-            area.insert(tk.END, "\n" + tr["ov_loading"] + "\n", "dim")
+        self._heading(area, tr["ov_pick"], T["GOOD"])
+        for pick in result.picks:
+            self._row(area, pick.hero, pick.total, T["GOOD"])
+        self._heading(area, tr["ov_avoid"], T["BAD"])
+        for pick in result.avoid:
+            self._row(area, pick.hero, pick.total, T["BAD"])
+
+    def _render_cm(self, area):
+        app = self.app
+        T, tr, F, cm = app.T, app.tr, app.F, app._cm
+        index = cm.current
+        if index is None:
+            self._hint.config(text=tr["cm_done_hint"])
+            tk.Label(area, text=tr["cm_done"], font=F["h1"], fg=T["TEXT"], bg=T["BG"]).pack(
+                anchor="w")
+        else:
+            kind = cm.kind(index)
+            ours = cm.side(index) == cm.ours
+            self._hint.config(text=tr["cm_entry_" + kind].format(n=index + 1))
+            head = tk.Frame(area, bg=T["BG"])
+            head.pack(fill=tk.X)
+            tk.Label(head, text=app._turn_words(index), font=F["h1"],
+                     fg=T["GOLD"] if ours else T["TEXT"], bg=T["BG"]).pack(side=tk.LEFT)
+            tk.Label(head, text=tr["ov_step"].format(n=index + 1, total=len(CM_ORDER)),
+                     font=F["small"], fg=T["TEXT3"], bg=T["BG"]).pack(side=tk.RIGHT, anchor="s")
+        box = tk.Frame(area, bg=T["TOPBAR"], highlightthickness=1, highlightbackground=T["LINE"])
+        box.pack(fill=tk.X, pady=(8, 0))
+        for side in SIDES:
+            color = T["RADIANT"] if side == "radiant" else T["DIRE"]
+            label = tr["side_" + side].upper()
+            self._lineup_strip(box, cm.picks(side), color, label)
+            if cm.bans(side):
+                self._lineup_strip(box, cm.bans(side), T["TEXT3"], "", ban=True)
+        # Подсказки к своему ближайшему ходу, начиная с текущего: бан — кого банить,
+        # пик — кого брать. Пока ходят они, заранее видно, что делать дальше.
+        ahead = [] if index is None else [i for i in range(index, len(CM_ORDER))
+                                          if cm.side(i) == cm.ours]
+        our_ban = bool(ahead) and cm.kind(ahead[0]) == "ban"
+        limit = min(app._limit, ROWS)
+        if our_ban:
+            result, title, color = cm.ban_suggestions(limit), tr["cm_ban_title"], T["BAD"]
+            heroes = cm.picks(cm.ours)
+        else:
+            result, title, color = cm.pick_suggestions(limit), tr["cm_pick_title"], T["GOOD"]
+            heroes = cm.picks(cm.theirs)
+        caption = tr["ov_against"].format(heroes=", ".join(heroes)) if heroes else ""
+        self._heading(area, title, color, caption)
+        if any(h in cm.loading for h in heroes):
+            tk.Label(area, text=tr["loading"], font=F["small"], fg=T["GOLD"], bg=T["BG"]).pack(
+                anchor="w")
+        if result is None:
+            tk.Label(area, text=tr["cm_ban_empty"] if our_ban else tr["cm_pick_empty"],
+                     font=F["small"], fg=T["TEXT3"], bg=T["BG"], justify=tk.LEFT,
+                     wraplength=WIDTH - 50).pack(anchor="w")
+            return
+        for pick in result.picks:
+            self._row(area, pick.hero, pick.total, color)
