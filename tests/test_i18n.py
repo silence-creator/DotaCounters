@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotacounters.draft import FILTERS, GROUPS, SIDES  # noqa: E402
 from dotacounters.i18n import I18N  # noqa: E402
+from dotacounters.meta import RANKS  # noqa: E402
 from dotacounters.ui.app import TABS  # noqa: E402
 from dotacounters.version import APP_VERSION  # noqa: E402
 
@@ -51,7 +52,7 @@ PREFIX_KEYS = {
     "cm_": _KINDS, "cm_your_": _KINDS, "cm_their_": _KINDS, "cm_phase_": _KINDS,
     "cm_entry_": _KINDS,
     "draft_to_": GROUPS, "draft_row_": GROUPS, "draft_next_": ("enemies", "allies"),
-    "ov_group_": GROUPS,
+    "ov_group_": GROUPS, "rank_": RANKS, "rank_short_": RANKS,
 }
 _SOURCES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         "dotacounters")
@@ -80,6 +81,16 @@ class KeysMatchCodeTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.used, cls.unknown = used_keys()
+
+    def test_no_keys_in_conditional_expressions(self):
+        """tr["a" if x else "b"] сканер не видит: писать tr["a"] if x else tr["b"]."""
+        bad = []
+        for path in glob.glob(os.path.join(_SOURCES, "**", "*.py"), recursive=True):
+            with open(path, encoding="utf-8") as f:
+                for n, line in enumerate(f, 1):
+                    if re.search(r"""tr\[\s*["'][a-z0-9_]+["']\s+if\b""", line):
+                        bad.append("%s:%d" % (os.path.basename(path), n))
+        self.assertEqual(bad, [])
 
     def test_compound_keys_are_known(self):
         self.assertEqual(self.unknown, set(), "впишите префикс в PREFIX_KEYS")

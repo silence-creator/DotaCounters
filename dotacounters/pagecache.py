@@ -98,11 +98,57 @@ class PageCache:
         except OSError:
             pass                       # нет места или прав — живём без кеша
 
+    # ── Прочие данные Dotabuff (мета) ─────────────────────────────────────────
+    # Те же правила — сутки и тот же патч, — но хранится любой JSON. Файл
+    # «_<имя>.json»: у героев подчёркивания в начале не бывает, и count()
+    # по нему отличает данные от страниц героев.
+
+    def _data_path(self, name: str) -> str | None:
+        if not self.folder or not _SAFE_SLUG.match(name or "") or "@" in name:
+            return None
+        return os.path.join(self.folder, "_%s.json" % name)
+
+    def load_data(self, name: str):
+        """Свежие сохранённые данные или None."""
+        path = self._data_path(name)
+        if not path:
+            return None
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            if data.get("format") != FORMAT:
+                return None
+            age = self.clock() - float(data["fetched_at"])
+            if not 0 <= age < self.max_age:
+                return None
+            if self.patch and data.get("patch") and data["patch"] != self.patch:
+                return None
+            return data["payload"]
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+
+    def save_data(self, name: str, payload) -> None:
+        path = self._data_path(name)
+        if not path:
+            return
+        data = {"format": FORMAT, "fetched_at": self.clock(), "patch": self.patch,
+                "payload": payload}
+        try:
+            os.makedirs(self.folder, exist_ok=True)
+            tmp = "%s.%d.tmp" % (path, threading.get_ident())
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False)
+            os.replace(tmp, path)
+        except OSError:
+            pass
+
     def count(self) -> int:
+        """Сколько героев сохранено (данные вроде меты не в счёт)."""
         if not self.folder:
             return 0   # os.listdir(None) читает текущую папку — не то
         try:
-            return sum(1 for name in os.listdir(self.folder) if name.endswith(".json"))
+            return sum(1 for name in os.listdir(self.folder)
+                       if name.endswith(".json") and not name.startswith("_"))
         except OSError:
             return 0
 

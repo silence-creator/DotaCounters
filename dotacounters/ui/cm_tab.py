@@ -14,6 +14,7 @@ import tkinter as tk
 from ..config import update_config
 from ..draft import CM_BOARD, CM_ORDER, SIDES
 from ..heroes import best_match
+from ..meta import MIN_PICK, RANKS
 from .hero_browser import HeroBrowserModal
 from .role_menu import RolePicker
 from .suggestions import HeroSuggestions
@@ -21,6 +22,9 @@ from .widgets import EntryBox, ScrollArea, Segmented, button, separator
 
 #: Клетки доски. Все 24 хода должны влезть в окно наименьшей высоты без прокрутки.
 BAN_SIZE, PICK_SIZE = (52, 29), (88, 50)
+#: Перенос строк в колонках подсказок. Колонка банов в окне 1040 — около 270
+#: пикселей: подпись шире колонки обрезалась слева (проверено снимком).
+HINT_WRAP = 250
 
 
 class CaptainsTab:
@@ -214,69 +218,130 @@ class CaptainsTab:
         self._cm_entry_label.config(text=tr["cm_entry_" + kind].format(n=index + 1))
 
     def _render_cm_hints(self):
-        T, tr, F, cm = self.T, self.tr, self.F, self._cm
+        """Две колонки: баны (до своих пиков — по мете) и пики."""
+        T, cm = self.T, self._cm
         area = self._cm_hints.inner
         for w in area.winfo_children():
             w.destroy()
         cols = tk.Frame(area, bg=T["BG"])
         cols.pack(fill=tk.BOTH, expand=True, padx=(0, 16))
         cols.columnconfigure((0, 1), weight=1, uniform="hint")
-        ours, theirs = cm.picks(cm.ours), cm.picks(cm.theirs)
-        next_pick = cm.next_pick(cm.ours)
-        pick_title = tr["cm_pick_at"].format(n=next_pick + 1) if next_pick is not None \
-            else tr["cm_pick_title"]
-        for col, (title, heroes, result, color, empty) in enumerate((
-                (tr["cm_ban_title"], ours, cm.ban_suggestions(self._limit), T["BAD"],
-                 tr["cm_ban_empty"]),
-                (pick_title, theirs, cm.pick_suggestions(self._limit), T["GOOD"],
-                 tr["cm_pick_empty"]))):
-            box = tk.Frame(cols, bg=T["BG"])
-            box.grid(row=0, column=col, sticky="nsew", padx=(0, 20) if col == 0 else (0, 0))
-            tk.Label(box, text=title, font=F["h2"], fg=T["TEXT"], bg=T["BG"]).pack(anchor="w")
-            loading = [h for h in heroes if h in cm.loading]
-            failed = [h for h in heroes if h in cm.failed]
-            if col == 0:
-                caption = tr["cm_ban_why"].format(heroes=", ".join(ours)) if ours else empty
-            else:
-                caption = tr["cm_pick_why"].format(heroes=", ".join(theirs)) if theirs else empty
-            tk.Label(box, text=caption, font=F["small"], fg=T["TEXT3"], bg=T["BG"],
-                     justify=tk.LEFT, wraplength=300).pack(anchor="w", pady=(2, 8))
-            if col == 1 and result is not None:
-                self._fill_line(box, cm, wrap=300)
-            if loading:
-                tk.Label(box, text=tr["draft_missing"].format(heroes=", ".join(loading)).strip(),
-                         font=F["small"], fg=T["GOLD"], bg=T["BG"]).pack(anchor="w")
-            if failed:
-                tk.Label(box, text=tr["cm_failed"].format(heroes=", ".join(failed)),
-                         font=F["small"], fg=T["BAD"], bg=T["BG"]).pack(anchor="w")
-                button(box, T, F, tr["draft_retry"], lambda: self._cm_changed(retry=True),
-                       kind="link", font="small_b").pack(anchor="w")
-            if result is None:
-                continue
-            if not result.picks:
-                tk.Label(box, text=tr["draft_nothing"].strip(), font=F["small"], fg=T["TEXT3"],
-                         bg=T["BG"]).pack(anchor="w")
-            for pick in result.picks:
-                self._cm_hint_row(box, pick, color)
+        bans = tk.Frame(cols, bg=T["BG"])
+        bans.grid(row=0, column=0, sticky="nsew", padx=(0, 20))
+        picks = tk.Frame(cols, bg=T["BG"])
+        picks.grid(row=0, column=1, sticky="nsew")
+        if cm.bans_by_meta:
+            self._render_cm_meta_bans(bans)
+        else:
+            self._render_cm_counter_hints(bans, "ban")
+        self._render_cm_counter_hints(picks, "pick")
 
-    def _cm_hint_row(self, parent, pick, color):
-        T, tr, F = self.T, self.tr, self.F
+    def _cm_hint_status(self, box, heroes):
+        """Под заголовком колонки: какие страницы ещё качаются, какие не загрузились."""
+        T, tr, F, cm = self.T, self.tr, self.F, self._cm
+        loading = [h for h in heroes if h in cm.loading]
+        failed = [h for h in heroes if h in cm.failed]
+        if loading:
+            tk.Label(box, text=tr["draft_missing"].format(heroes=", ".join(loading)).strip(),
+                     font=F["small"], fg=T["GOLD"], bg=T["BG"]).pack(anchor="w")
+        if failed:
+            tk.Label(box, text=tr["cm_failed"].format(heroes=", ".join(failed)),
+                     font=F["small"], fg=T["BAD"], bg=T["BG"]).pack(anchor="w")
+            button(box, T, F, tr["draft_retry"], lambda: self._cm_changed(retry=True),
+                   kind="link", font="small_b").pack(anchor="w")
+
+    def _render_cm_counter_hints(self, box, kind):
+        """Контрпики: баны — против наших пиков, пики — против их пиков. Обе колонки
+        — под свободные позиции: баны — противника, пики — свои."""
+        T, tr, F, cm = self.T, self.tr, self.F, self._cm
+        if kind == "ban":
+            heroes, result = cm.picks(cm.ours), cm.ban_suggestions(self._limit)
+            title, color = tr["cm_ban_title"], T["BAD"]
+            caption = tr["cm_ban_why"].format(heroes=", ".join(heroes))
+        else:
+            heroes, result = cm.picks(cm.theirs), cm.pick_suggestions(self._limit)
+            next_pick = cm.next_pick(cm.ours)
+            title = tr["cm_pick_at"].format(n=next_pick + 1) if next_pick is not None \
+                else tr["cm_pick_title"]
+            color = T["GOOD"]
+            caption = tr["cm_pick_why"].format(heroes=", ".join(heroes)) if heroes \
+                else tr["cm_pick_empty"]
+        tk.Label(box, text=title, font=F["h2"], fg=T["TEXT"], bg=T["BG"]).pack(anchor="w")
+        tk.Label(box, text=caption, font=F["small"], fg=T["TEXT3"], bg=T["BG"],
+                 justify=tk.LEFT, wraplength=HINT_WRAP).pack(anchor="w", pady=(2, 8))
+        if result is not None:
+            self._fill_line(box, cm, wrap=HINT_WRAP, theirs=kind == "ban")
+        self._cm_hint_status(box, heroes)
+        if result is None:
+            return
+        if not result.picks:
+            tk.Label(box, text=tr["draft_nothing"].strip(), font=F["small"], fg=T["TEXT3"],
+                     bg=T["BG"], justify=tk.LEFT, wraplength=HINT_WRAP).pack(anchor="w")
+        for pick in result.picks:
+            # «Мид · Тройка · 72к матчей»: что матчей — в самой редкой паре, сказано в подвале
+            self._cm_hint_row(box, pick.hero, self._signed(pick.total), color,
+                              tr["cm_hint_games"].format(n=self._count_text(pick.matches)))
+
+    def _render_cm_meta_bans(self, box):
+        """Баны до своих пиков — по мете: сильнейшие по винрейту в выбранном ранге."""
+        T, tr, F, cm = self.T, self.tr, self.F, self._cm
+        head = tk.Frame(box, bg=T["BG"])
+        head.pack(fill=tk.X)
+        tk.Label(head, text=tr["cm_ban_title"], font=F["h2"], fg=T["TEXT"], bg=T["BG"]).pack(
+            side=tk.LEFT)
+        self._rank_menu(head).pack(side=tk.RIGHT)
+        tk.Label(box, text=tr["meta_why"].format(pick=int(MIN_PICK)), font=F["small"],
+                 fg=T["TEXT3"], bg=T["BG"], justify=tk.LEFT, wraplength=HINT_WRAP).pack(
+                     anchor="w", pady=(2, 8))
+        result = cm.meta_bans(self._limit)
+        if result is None:
+            self._fetch_meta()
+            if cm.meta_error is not None:
+                tk.Label(box, text=tr["meta_failed"].format(detail=cm.meta_error), font=F["small"],
+                         fg=T["BAD"], bg=T["BG"], justify=tk.LEFT, wraplength=HINT_WRAP).pack(anchor="w")
+                button(box, T, F, tr["draft_retry"], lambda: self._fetch_meta(retry=True),
+                       kind="link", font="small_b").pack(anchor="w")
+            else:
+                tk.Label(box, text=tr["loading"], font=F["small"], fg=T["GOLD"],
+                         bg=T["BG"]).pack(anchor="w")
+            return
+        self._fill_line(box, cm, wrap=HINT_WRAP, theirs=True)
+        for row in result:
+            self._cm_hint_row(box, row.hero, self._percent(row.win), T["BAD"],
+                              tr["meta_pick"].format(pick=self._percent(row.pick)))
+
+    def _rank_menu(self, parent):
+        """«Ранг: Legend ▾» — группа рангов меты; выбор запоминается."""
+        T, tr, F, cm = self.T, self.tr, self.F, self._cm
+        more = tk.Menubutton(parent, text=tr["rank_short_" + cm.rank] + " ▾", font=F["small_b"],
+                             relief="flat", bd=0, padx=8, pady=2, cursor="hand2",
+                             highlightthickness=1, highlightbackground=T["LINE"],
+                             bg=T["BG"], fg=T["TEXT2"], activebackground=T["SELECTED"],
+                             activeforeground=T["TEXT"])
+        menu = tk.Menu(more, tearoff=0, bg=T["PANEL"], fg=T["TEXT"], font=F["body"], bd=0,
+                       activebackground=T["SELECTED"], activeforeground=T["TEXT"])
+        for rank in RANKS:
+            menu.add_command(label=tr["rank_" + rank], command=lambda r=rank: self._set_meta_rank(r))
+        more["menu"] = menu
+        return more
+
+    def _cm_hint_row(self, parent, hero, value, color, detail):
+        """Строка подсказки: портрет, имя и число; под именем — позиции и пояснение."""
+        T, F = self.T, self.F
         separator(parent, T)
         row = tk.Frame(parent, bg=T["BG"])
         row.pack(fill=tk.X, pady=6)
-        tk.Label(row, image=self.photo(pick.hero, (56, 32)), bg=T["BG"]).pack(side=tk.LEFT)
+        tk.Label(row, image=self.photo(hero, (56, 32)), bg=T["BG"]).pack(side=tk.LEFT)
         body = tk.Frame(row, bg=T["BG"])
         body.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 0))
         top = tk.Frame(body, bg=T["BG"])
         top.pack(fill=tk.X)
-        tk.Label(top, text=pick.hero, font=F["name"], fg=T["TEXT"], bg=T["BG"]).pack(side=tk.LEFT)
-        tk.Label(top, text=self._signed(pick.total), font=F["value"], fg=color,
-                 bg=T["BG"]).pack(side=tk.RIGHT)
-        # «Мид · Тройка · 72к матчей»: что матчей — в самой редкой паре, сказано в подвале
-        meta = [self._hero_positions(pick.hero),
-                tr["cm_hint_games"].format(n=self._count_text(pick.matches))]
+        tk.Label(top, text=hero, font=F["name"], fg=T["TEXT"], bg=T["BG"]).pack(side=tk.LEFT)
+        tk.Label(top, text=value, font=F["value"], fg=color, bg=T["BG"]).pack(side=tk.RIGHT)
+        meta = [self._hero_positions(hero), detail]
+        # Три позиции и пояснение в узкую колонку не влезают — переносится
         tk.Label(body, text=" · ".join(m for m in meta if m), font=F["small"], fg=T["TEXT3"],
-                 bg=T["BG"]).pack(anchor="w")
+                 bg=T["BG"], justify=tk.LEFT, wraplength=HINT_WRAP - 70).pack(anchor="w")
 
     # ── Действия ──────────────────────────────────────────────────────────────
 

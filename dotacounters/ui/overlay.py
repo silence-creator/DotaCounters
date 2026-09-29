@@ -403,15 +403,16 @@ class Overlay:
             self._render_counters(area)
         self._area.to_top()
 
-    def _row(self, parent, hero, value, color):
+    def _row(self, parent, hero, value, color, text=None):
+        """Строка героя: число справа — преимущество со знаком или готовый text."""
         app = self.app
         T, F = app.T, app.F
         separator(parent, T)
         row = tk.Frame(parent, bg=T["BG"])
         row.pack(fill=tk.X, pady=4)
         tk.Label(row, image=app.photo(hero, (52, 29)), bg=T["BG"]).pack(side=tk.LEFT)
-        tk.Label(row, text=app._signed(value), font=F["value"], fg=color, bg=T["BG"]).pack(
-            side=tk.RIGHT)
+        tk.Label(row, text=text if text is not None else app._signed(value), font=F["value"],
+                 fg=color, bg=T["BG"]).pack(side=tk.RIGHT)
         names = tk.Frame(row, bg=T["BG"])
         names.pack(side=tk.LEFT, padx=(10, 0))
         tk.Label(names, text=hero, font=F["name"], fg=T["TEXT"], bg=T["BG"]).pack(anchor="w")
@@ -429,12 +430,13 @@ class Overlay:
             tk.Label(head, text=caption, font=F["small"], fg=T["TEXT3"], bg=T["BG"]).pack(
                 side=tk.RIGHT)
 
-    def _fill_note(self, parent, model):
-        """«Под свободные позиции: …» над пиками. Выключается в главном окне."""
+    def _fill_note(self, parent, model, theirs=False):
+        """«Под свободные позиции: …» над пиками (theirs — противника, над банами).
+        Выключается в главном окне."""
         app = self.app
-        positions = model.pick_filter()
+        positions = model.ban_filter() if theirs else model.pick_filter()
         if positions:
-            tk.Label(parent, text=app.tr["fill_on"].format(
+            tk.Label(parent, text=(app.tr["fill_theirs"] if theirs else app.tr["fill_on"]).format(
                 positions=app._positions_text(positions)), font=app.F["small"],
                 fg=app.T["GOLD"], bg=app.T["BG"], anchor="w", justify=tk.LEFT,
                 wraplength=WIDTH - 50).pack(fill=tk.X, pady=(0, 4))
@@ -561,6 +563,9 @@ class Overlay:
                                           if cm.side(i) == cm.ours]
         our_ban = bool(ahead) and cm.kind(ahead[0]) == "ban"
         limit = min(app._limit, ROWS)
+        if our_ban and cm.bans_by_meta:
+            self._render_meta_bans(area, limit)
+            return
         if our_ban:
             result, title, color = cm.ban_suggestions(limit), tr["cm_ban_title"], T["BAD"]
             heroes = cm.picks(cm.ours)
@@ -569,8 +574,7 @@ class Overlay:
             heroes = cm.picks(cm.theirs)
         caption = tr["ov_against"].format(heroes=", ".join(heroes)) if heroes else ""
         self._heading(area, title, color, caption)
-        if not our_ban:
-            self._fill_note(area, cm)
+        self._fill_note(area, cm, theirs=our_ban)
         if any(h in cm.loading for h in heroes):
             tk.Label(area, text=tr["loading"], font=F["small"], fg=T["GOLD"], bg=T["BG"]).pack(
                 anchor="w")
@@ -581,3 +585,21 @@ class Overlay:
             return
         for pick in result.picks:
             self._row(area, pick.hero, pick.total, color)
+
+    def _render_meta_bans(self, area, limit):
+        """Баны до своих пиков — по мете (ранг выбирается во вкладке Captains Mode)."""
+        app = self.app
+        T, tr, F, cm = app.T, app.tr, app.F, app._cm
+        self._heading(area, tr["cm_ban_title"], T["BAD"], tr["ov_meta"].format(
+            rank=tr["rank_short_" + cm.rank]))
+        self._fill_note(area, cm, theirs=True)
+        result = cm.meta_bans(limit)
+        if result is None:
+            app._fetch_meta()
+            text, color = ((tr["meta_failed"].format(detail=cm.meta_error), T["BAD"])
+                           if cm.meta_error is not None else (tr["loading"], T["GOLD"]))
+            tk.Label(area, text=text, font=F["small"], fg=color, bg=T["BG"], justify=tk.LEFT,
+                     wraplength=WIDTH - 50).pack(anchor="w")
+            return
+        for row in result:
+            self._row(area, row.hero, None, T["BAD"], text=app._percent(row.win))

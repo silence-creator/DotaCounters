@@ -84,6 +84,7 @@ class DraftTest(unittest.TestCase):
     def test_suggestions(self):
         """Бан — против наших пиков, пик — против их пиков; взятые и забаненные не в счёт."""
         cm = CaptainsDraft()
+        cm.fill = False     # здесь про источники подсказок; свободные позиции — в test_meta
         for hero in ("B1", "B2", "B3", "B4", "B5", "B6", "B7", "Mars", "Drow Ranger"):
             cm.play(hero)
         self.assertIsNone(cm.ban_suggestions(), "страниц ещё нет")

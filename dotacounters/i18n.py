@@ -90,6 +90,7 @@ I18N = {
         "fill_all":          "show all",
         "fill_off":          "All positions",
         "fill_only":         "only open positions",
+        "fill_theirs":       "For the enemy's open positions: {positions}",
 
         # ── Драфт
         "draft_row_enemies": "Enemy",
@@ -159,6 +160,25 @@ I18N = {
         "cm_undone":         "Undone: {hero}",
         "cm_footnote":       "Banned and picked heroes drop out of the suggestions. Games — in the least played "
                              "pair. Move order — Captains Mode 7.41.",
+
+        # ── Мета: баны до своих пиков
+        "meta_why":          "strongest in the meta by win rate — among heroes picked in {pick}%+ of "
+                             "games, for the month",
+        "meta_pick":         "in {pick} of games",
+        "meta_failed":       "Could not load the meta: {detail}",
+        "ov_meta":           "meta · {rank}",
+        "rank_all":          "All ranks",
+        "rank_herald":       "Crusader and lower (under 2K)",
+        "rank_archon":       "Archon (2–3K)",
+        "rank_legend":       "Legend (3–4K)",
+        "rank_ancient":      "Ancient (4–5K)",
+        "rank_divine":       "Divine and Immortal (5K+)",
+        "rank_short_all":    "All ranks",
+        "rank_short_herald": "Under 2K",
+        "rank_short_archon": "Archon",
+        "rank_short_legend": "Legend",
+        "rank_short_ancient": "Ancient",
+        "rank_short_divine": "Divine+",
         "cm_hint_games":     "{n} games",
 
         # ── Оверлей
@@ -248,7 +268,11 @@ I18N = {
         "upd_restart":       "Restarting…",
         "upd_error":         "Update failed: {detail}",
         "upd_title":         "Updates",
-        "upd_text":          "v2.1\n"
+        "upd_text":          "v2.2\n"
+                             "Captains Mode: bans of the first phase, before anyone has picked. They come from the meta — the strongest heroes by win rate among those picked in at least 5% of games; the rank is chosen next to the list and remembered.\n"
+                             "Captains Mode: after the first picks, ban suggestions are for the positions the enemy still lacks — no point banning a carry when they already have one. «show all» turns it off.\n"
+                             "\n"
+                             "v2.1\n"
                              "Positions in the filter: Carry, Mid, Offlane, Pos 4, Pos 5. Valve has no positions, only roles, so they come from Dotabuff lane statistics: the share of a hero's games in each lane and the gold earned there. A hero counts for a position from 20% of games; some heroes have two or three. Valve roles are under More.\n"
                              "The hero card shows the hero's positions before the roles.\n"
                              "Pick suggestions in the draft and Captains Mode are for the positions your team still lacks: the program places your heroes on positions and shows which are open. «show all» turns it off; picking a position or role by hand turns it off too.\n"
@@ -405,6 +429,7 @@ I18N = {
         "fill_all":          "показать всех",
         "fill_off":          "Все позиции",
         "fill_only":         "только свободные позиции",
+        "fill_theirs":       "Под свободные позиции противника: {positions}",
 
         # ── Драфт
         "draft_row_enemies": "Противник",
@@ -474,6 +499,25 @@ I18N = {
         "cm_undone":         "Отменено: {hero}",
         "cm_footnote":       "Забаненные и взятые герои в подсказки не попадают. Матчей — в самой редкой паре. "
                              "Порядок ходов — Captains Mode 7.41.",
+
+        # ── Мета: баны до своих пиков
+        "meta_why":          "сильнейшие в мете по винрейту — среди тех, кого берут от {pick}% игр, за "
+                             "месяц",
+        "meta_pick":         "берут в {pick} игр",
+        "meta_failed":       "Не удалось загрузить мету: {detail}",
+        "ov_meta":           "мета · {rank}",
+        "rank_all":          "Все ранги",
+        "rank_herald":       "Crusader и ниже (до 2K)",
+        "rank_archon":       "Archon (2–3K)",
+        "rank_legend":       "Legend (3–4K)",
+        "rank_ancient":      "Ancient (4–5K)",
+        "rank_divine":       "Divine и Immortal (5K+)",
+        "rank_short_all":    "Все ранги",
+        "rank_short_herald": "До 2K",
+        "rank_short_archon": "Archon",
+        "rank_short_legend": "Legend",
+        "rank_short_ancient": "Ancient",
+        "rank_short_divine": "Divine+",
         "cm_hint_games":     "{n} матчей",
 
         # ── Оверлей
@@ -563,7 +607,11 @@ I18N = {
         "upd_restart":       "Перезапуск…",
         "upd_error":         "Не удалось обновить: {detail}",
         "upd_title":         "Обновления",
-        "upd_text":          "v2.1\n"
+        "upd_text":          "v2.2\n"
+                             "Captains Mode: баны первой фазы, до любых пиков. Они берутся из меты — сильнейшие по винрейту среди героев, которых берут хотя бы в 5% игр; ранг выбирается рядом со списком и запоминается.\n"
+                             "Captains Mode: после первых пиков баны подсказываются под позиции, которых не хватает противнику — керри банить незачем, если он у них уже есть. «показать всех» выключает это.\n"
+                             "\n"
+                             "v2.1\n"
                              "Позиции в фильтре: Керри, Мид, Тройка, Четвёрка, Пятёрка. У Valve позиций нет, только роли, поэтому они берутся из статистики линий Dotabuff: доля матчей героя на каждой линии и золото, которое он там зарабатывает. Герой попадает в позицию от 20% матчей; у некоторых героев их две или три. Роли Valve — в «Ещё».\n"
                              "В карточке героя — его позиции, а за ними роли.\n"
                              "Подсказки пиков в драфте и Captains Mode — под позиции, которых не хватает вашей команде: программа расставляет ваших героев по позициям и показывает свободные. «показать всех» выключает это; выбранная вручную позиция или роль — тоже.\n"

@@ -11,6 +11,7 @@
 from dataclasses import dataclass, field
 
 from .dotabuff import reliable
+from .meta import strongest
 from .positions import POSITIONS, assign_positions, missing_positions, positions_of
 from .roles import ROLE_LEVELS, ROLE_ORDER
 
@@ -311,9 +312,26 @@ class CaptainsDraft(_FillsPositions):
         self.loading = set()
         self.role = None
         self.fill = True
+        # Мета для банов первой фазы (meta.py): {герой: ((pick, win) по рангам)}
+        self.meta = None
+        self.meta_loading = False
+        self.meta_error = None
+        self.rank = "all"   # группа рангов меты, см. meta.RANKS
 
     def _our_team(self) -> list:
         return self.picks(self.ours)
+
+    def their_needed(self) -> tuple:
+        """Свободные позиции противника; пусто, пока у него нет пиков."""
+        team = self.picks(self.theirs)
+        return missing_positions(team) if team else ()
+
+    def ban_filter(self) -> tuple:
+        """Позиции, под которые подбираются баны: свободные у противника — банить
+        стоит того, кого он ещё может взять. Правила те же, что у pick_filter."""
+        if not self.fill or self.role is not None:
+            return ()
+        return self.their_needed()
 
     # ── Ходы ──────────────────────────────────────────────────────────────
 
@@ -423,9 +441,30 @@ class CaptainsDraft(_FillsPositions):
                        exclude=[h for h in self.heroes if h])
 
     def ban_suggestions(self, limit: int = DEFAULT_PICKS):
-        """Кого банить: сильнейшие против наших пиков. None — наших пиков со страницей нет.
-        Свободные позиции тут ни при чём: банить стоит того, кого возьмут они."""
-        return self._suggest(self.picks(self.ours), limit)
+        """Кого банить: сильнейшие против наших пиков, под свободные позиции
+        противника (ban_filter). None — наших пиков со страницей нет."""
+        return self._suggest(self.picks(self.ours), limit, self.ban_filter())
+
+    @property
+    def bans_by_meta(self) -> bool:
+        """Своих пиков ещё нет — баны подбираются по мете, а не по контрпикам."""
+        return not self.picks(self.ours)
+
+    def meta_bans(self, limit: int = DEFAULT_PICKS):
+        """Кого банить по мете выбранного ранга; None — меты ещё нет.
+
+        Взятые и забаненные не предлагаются, фильтр позиции или роли и
+        свободные позиции противника — как у остальных подсказок.
+        """
+        if self.meta is None:
+            return None
+        taken, need = self.taken(), set(self.ban_filter())
+
+        def allowed(hero):
+            return (hero.lower() not in taken
+                    and (self.role is None or has_role(hero, self.role))
+                    and (not need or need & set(positions_of(hero))))
+        return strongest(self.meta, self.rank, allowed, limit)
 
     def pick_suggestions(self, limit: int = DEFAULT_PICKS):
         """Кого брать: сильнейшие против их пиков, под свободные позиции своей

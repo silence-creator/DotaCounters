@@ -15,7 +15,8 @@ from PIL import Image, ImageTk
 
 from .. import updates
 from ..config import cache_dir, load_config, update_config
-from ..dotabuff import DEFAULT_LIMIT, DEFAULT_PERIOD, MAX_LIMIT, PERIODS, fetch_many, period_param
+from ..dotabuff import (DEFAULT_LIMIT, DEFAULT_PERIOD, MAX_LIMIT, PERIODS, DotabuffError,
+                        FetchError, fetch_many, period_param)
 from ..draft import FILTERS, CaptainsDraft, DraftBoard
 from ..heroes import ALL_HEROES, resolve
 from ..hotkey import DEFAULT_HOTKEY, GlobalHotkey, format_hotkey, parse_hotkey
@@ -24,6 +25,7 @@ from ..icons import banned, fetch_icons, load_icon, portrait_url, rounded
 from ..net import create_scraper
 from ..numbers import short_count
 from ..pagecache import PageCache
+from ..meta import RANKS, fetch_meta
 from ..patches import FALLBACK_PATCH, fetch_current_patch
 from ..positions import positions_of
 from ..recent import MAX_FAVOURITES, MAX_HISTORY, clean_list, sane_geometry
@@ -86,6 +88,7 @@ class DotaApp(SearchTab, DraftTab, CaptainsTab, SettingsTab, UpdatesTab):
         self._board.role = self._known_filter(cfg.get("draft_role"))
         self._cm.role    = self._known_filter(cfg.get("cm_role"))
         self._board.fill = self._cm.fill = cfg.get("fill_positions", True) is not False
+        self._cm.rank = cfg.get("meta_rank") if cfg.get("meta_rank") in RANKS else "all"
         self._draft_group   = "enemies"      # куда пойдёт набранный герой
         self._draft_scraper = None           # одна сессия на все запросы драфтов
         self._draft_lock    = threading.Lock()
@@ -479,6 +482,42 @@ class DotaApp(SearchTab, DraftTab, CaptainsTab, SettingsTab, UpdatesTab):
                                          cache=self._pages, **options)
         self.root.after(0, self._pages_loaded, model, reports, failed, options)
 
+    def _fetch_meta(self, retry=False):
+        """Мета для банов первой фазы Captains Mode — один раз, по требованию.
+
+        Качается той же сессией и под тем же замком, что страницы драфтов;
+        из кеша страниц — без сети. Не загрузилась — сама не повторяется.
+        """
+        cm = self._cm
+        if cm.meta is not None or cm.meta_loading or (cm.meta_error and not retry):
+            return
+        cm.meta_loading, cm.meta_error = True, None
+
+        def work():
+            meta, error = None, None
+            with self._draft_lock:
+                if self._draft_scraper is None:
+                    self._draft_scraper = create_scraper()
+                try:
+                    meta = fetch_meta(self._draft_scraper, cache=self._pages)
+                except DotabuffError as exc:
+                    error = exc
+                except Exception as exc:        # сеть, разбор — всё показать словами
+                    error = FetchError(str(exc))
+            self.root.after(0, self._meta_loaded, meta, error)
+        threading.Thread(target=work, daemon=True).start()
+
+    def _meta_loaded(self, meta, error):
+        cm = self._cm
+        cm.meta_loading = False
+        cm.meta, cm.meta_error = meta, error
+        self._cm_changed(fetch=False)
+
+    def _set_meta_rank(self, rank):
+        self._cm.rank = rank
+        update_config(meta_rank=rank)
+        self._cm_changed(fetch=False)
+
     def _pages_loaded(self, model, reports, failed, options):
         if options != self._fetch_options():
             # Пока качалось, сменили период: эти страницы уже не те. Снять
@@ -526,19 +565,22 @@ class DotaApp(SearchTab, DraftTab, CaptainsTab, SettingsTab, UpdatesTab):
         """Позиции героя подписью: «Мид · Тройка»."""
         return self._positions_text(positions_of(hero))
 
-    def _fill_line(self, parent, model, wrap=None):
-        """Строка над подсказками пиков: под какие свободные позиции они подобраны,
-        и ссылка-переключатель «показать всех» / «только свободные». Пока своих
-        героев нет или фильтр выбран явно, строки нет. wrap — ширина узкой колонки:
-        текст переносится, а ссылка встаёт под ним."""
+    def _fill_line(self, parent, model, wrap=None, theirs=False):
+        """Строка над подсказками: под какие свободные позиции они подобраны, и
+        ссылка-переключатель «показать всех» / «только свободные». theirs —
+        позиции противника (баны Captains Mode), иначе своей команды. Пока
+        героев нет или фильтр выбран явно, строки нет. wrap — ширина узкой
+        колонки: текст переносится, а ссылка встаёт под ним."""
         T, tr, F = self.T, self.tr, self.F
-        needed = model.needed()
+        needed = model.their_needed() if theirs else model.needed()
         if model.role is not None or not needed:
             return
         line = tk.Frame(parent, bg=T["BG"])
         line.pack(fill=tk.X, pady=(0, 8))
         if model.fill:
-            text, link = tr["fill_on"].format(positions=self._positions_text(needed)), tr["fill_all"]
+            text = (tr["fill_theirs"] if theirs else tr["fill_on"]).format(
+                positions=self._positions_text(needed))
+            link = tr["fill_all"]
         else:
             text, link = tr["fill_off"], tr["fill_only"]
         side = tk.TOP if wrap else tk.LEFT
