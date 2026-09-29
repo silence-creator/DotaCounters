@@ -3,6 +3,7 @@
 Запуск:  python -m unittest discover -s tests -v
 """
 
+import glob
 import os
 import re
 import sys
@@ -10,7 +11,9 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from dotacounters.draft import FILTERS, GROUPS, SIDES  # noqa: E402
 from dotacounters.i18n import I18N  # noqa: E402
+from dotacounters.ui.app import TABS  # noqa: E402
 from dotacounters.version import APP_VERSION  # noqa: E402
 
 
@@ -35,9 +38,58 @@ class I18nTest(unittest.TestCase):
         self.assertEqual(as_tuples, sorted(as_tuples, reverse=True))
         self.assertEqual(len(set(as_tuples)), len(as_tuples), "версии не повторяются")
 
-    def test_version_labels_follow_app_version(self):
+    def test_version_label_takes_app_version(self):
         for table in I18N.values():
-            self.assertEqual(table["set_ver_val"], APP_VERSION)
+            self.assertIn(APP_VERSION, table["set_version"].format(version=APP_VERSION))
+
+
+# Ключи, которые код собирает из частей: tr["role_" + позиция]. Новый составной
+# ключ нужно вписать сюда — иначе тест не поймёт, какие строки он использует.
+_KINDS = ("ban", "pick")
+PREFIX_KEYS = {
+    "tab_": TABS, "role_": FILTERS, "side_": SIDES,
+    "cm_": _KINDS, "cm_your_": _KINDS, "cm_their_": _KINDS, "cm_phase_": _KINDS,
+    "cm_entry_": _KINDS,
+    "draft_to_": GROUPS, "draft_row_": GROUPS, "draft_next_": ("enemies", "allies"),
+    "ov_group_": GROUPS,
+}
+_SOURCES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "dotacounters")
+
+
+def used_keys():
+    """Ключи строк, к которым обращается код: tr["ключ"] и tr["префикс_" + …]."""
+    keys, unknown = set(), set()
+    for path in glob.glob(os.path.join(_SOURCES, "**", "*.py"), recursive=True):
+        if os.path.basename(path) == "i18n.py":
+            continue
+        with open(path, encoding="utf-8") as f:
+            src = f.read()
+        keys |= set(re.findall(r"""tr\[\s*["']([a-z0-9_]+)["']\s*\]""", src))
+        for prefix in re.findall(r"""tr\[\s*["']([a-z0-9_]+)["']\s*\+""", src):
+            if prefix in PREFIX_KEYS:
+                keys |= {prefix + suffix for suffix in PREFIX_KEYS[prefix]}
+            else:
+                unknown.add(prefix)
+    return keys, unknown
+
+
+class KeysMatchCodeTest(unittest.TestCase):
+    """Файл строк и код не расходятся: нет ни KeyError, ни мёртвых строк."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.used, cls.unknown = used_keys()
+
+    def test_compound_keys_are_known(self):
+        self.assertEqual(self.unknown, set(), "впишите префикс в PREFIX_KEYS")
+
+    def test_every_used_key_exists(self):
+        for lang, table in I18N.items():
+            self.assertEqual(sorted(self.used - set(table)), [], "язык %s" % lang)
+
+    def test_no_unused_strings(self):
+        self.assertEqual(sorted(set(I18N["en"]) - self.used), [])
 
 
 if __name__ == "__main__":

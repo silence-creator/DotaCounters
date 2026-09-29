@@ -11,6 +11,7 @@
 from dataclasses import dataclass, field
 
 from .dotabuff import reliable
+from .positions import POSITIONS, assign_positions, missing_positions, positions_of
 from .roles import ROLE_LEVELS, ROLE_ORDER
 
 #: Сколько героев показывать в каждом списке по умолчанию.
@@ -26,10 +27,15 @@ MAX_BANS = 16
 #: игре больше нет, поэтому в фильтр он не вынесен.
 ROLE_FILTERS = ("carry", "support", "initiator", "disabler",
                 "nuker", "durable", "escape", "pusher")
+#: Всё, по чему можно фильтровать: позиции 1–5 (positions.py) и роли Valve.
+FILTERS = POSITIONS + ROLE_FILTERS
 
 
 def has_role(hero: str, role: str) -> bool:
-    """Свойственна ли герою роль по разметке Valve. Незнакомый герой — нет."""
+    """Подходит ли герой под фильтр: позиция pos1–pos5 по статистике линий
+    или роль по разметке Valve. Незнакомый герой — нет."""
+    if role in POSITIONS:
+        return role in positions_of(hero)
     levels = ROLE_LEVELS.get(hero)
     return bool(levels) and levels[ROLE_ORDER.index(role)] > 0
 
@@ -81,14 +87,16 @@ class DraftResult:
 
 
 def analyse(reports: dict, limit: int = DEFAULT_PICKS, exclude=(),
-            role: str | None = None) -> DraftResult:
+            role: str | None = None, positions=()) -> DraftResult:
     """Сложить матчапы врагов и отранжировать кандидатов.
 
     reports — {имя врага: CounterReport}. Учитываются только отчёты с полной
     таблицей матчапов: коротких списков на пять строк для суммирования мало.
     Сами враги из кандидатов исключаются — их уже забрали. exclude — ещё
     недоступные герои: союзники и баны. role — оставить только героев с этой
-    ролью (см. ROLE_FILTERS), и в «брать», и в «не брать».
+    позицией или ролью (см. FILTERS), и в «брать», и в «не брать». positions —
+    оставить героев, играющих хотя бы одну из этих позиций (свободные позиции
+    своей команды); пусто — без ограничения.
     """
     result = DraftResult()
     totals, per_enemy, icons, fewest = {}, {}, {}, {}
@@ -119,7 +127,8 @@ def analyse(reports: dict, limit: int = DEFAULT_PICKS, exclude=(),
     # иначе сумма по трём врагам конкурировала бы с суммой по одному.
     complete = [hero for hero, seen in per_enemy.items()
                 if len(seen) == len(result.enemies)
-                and (role is None or has_role(hero, role))]
+                and (role is None or has_role(hero, role))
+                and (not positions or set(positions) & set(positions_of(hero)))]
     picks = [Pick(hero=hero, total=totals[hero], per_enemy=per_enemy[hero],
                   icon_url=icons.get(hero), matches=fewest.get(hero)) for hero in complete]
     picks.sort(key=lambda p: (-p.total, p.hero))
@@ -136,7 +145,38 @@ GROUPS = ("enemies", "allies", "bans")
 _GROUP_LIMITS = {"enemies": MAX_ENEMIES, "allies": MAX_ALLIES, "bans": MAX_BANS}
 
 
-class DraftBoard:
+class _FillsPositions:
+    """Подбор под свободные позиции своей команды — общее у обоих драфтов.
+
+    Свои герои расставляются по позициям (positions.assign_positions), и
+    подсказки пиков ограничиваются теми, кто играет хоть одну свободную.
+    Работает, только пока фильтр позиции или роли не выбран явно (role —
+    None): «ищу мидера» важнее, чем «мид уже занят». fill — выключатель.
+    """
+
+    fill = True
+    role = None
+
+    def _our_team(self) -> list:
+        raise NotImplementedError
+
+    def lineup(self) -> dict:
+        """Расстановка своей команды: {герой: позиция}."""
+        return assign_positions(self._our_team())
+
+    def needed(self) -> tuple:
+        """Свободные позиции своей команды; пусто, пока своих героев нет."""
+        team = self._our_team()
+        return missing_positions(team) if team else ()
+
+    def pick_filter(self) -> tuple:
+        """Позиции, под которые сейчас подбираются пики; пусто — без ограничения."""
+        if not self.fill or self.role is not None:
+            return ()
+        return self.needed()
+
+
+class DraftBoard(_FillsPositions):
     """Враги, союзники и баны плюс скачанные страницы врагов.
 
     Один состав на вкладку «Драфт» и оверлей: героя, добавленного в одном
@@ -149,11 +189,15 @@ class DraftBoard:
         self.reports = {}   # враг -> CounterReport
         self.failed = {}    # враг -> ошибка последней загрузки
         self.loading = set()  # враги, чьи страницы сейчас качаются
-        self.role = None    # фильтр по роли, см. ROLE_FILTERS
+        self.role = None    # фильтр по позиции или роли, см. FILTERS
+        self.fill = True    # подбирать под свободные позиции своей команды
 
     @property
     def enemies(self):
         return self.groups["enemies"]
+
+    def _our_team(self) -> list:
+        return self.groups["allies"]
 
     def group_of(self, hero: str):
         for group, heroes in self.groups.items():
@@ -215,7 +259,7 @@ class DraftBoard:
         reports = {hero: self.reports[hero] for hero in self.enemies if hero in self.reports}
         if not reports:
             return None
-        return analyse(reports, limit=limit, role=self.role,
+        return analyse(reports, limit=limit, role=self.role, positions=self.pick_filter(),
                        exclude=self.groups["allies"] + self.groups["bans"])
 
 
@@ -249,7 +293,7 @@ CM_PHASES = ((1, 7, "ban", 1), (8, 9, "pick", 1), (10, 12, "ban", 2),
 SIDES = ("radiant", "dire")
 
 
-class CaptainsDraft:
+class CaptainsDraft(_FillsPositions):
     """Драфт Captains Mode: 24 хода по порядку и скачанные страницы пиков.
 
     Стороны — «radiant» и «dire»; first — кто ходит первым, ours — за кого
@@ -266,6 +310,10 @@ class CaptainsDraft:
         self.failed = {}
         self.loading = set()
         self.role = None
+        self.fill = True
+
+    def _our_team(self) -> list:
+        return self.picks(self.ours)
 
     # ── Ходы ──────────────────────────────────────────────────────────────
 
@@ -367,17 +415,19 @@ class CaptainsDraft:
         else:
             self.failed[hero] = error
 
-    def _suggest(self, heroes, limit):
+    def _suggest(self, heroes, limit, positions=()):
         reports = {h: self.reports[h] for h in heroes if h in self.reports}
         if not reports:
             return None
-        return analyse(reports, limit=limit, role=self.role,
+        return analyse(reports, limit=limit, role=self.role, positions=positions,
                        exclude=[h for h in self.heroes if h])
 
     def ban_suggestions(self, limit: int = DEFAULT_PICKS):
-        """Кого банить: сильнейшие против наших пиков. None — наших пиков со страницей нет."""
+        """Кого банить: сильнейшие против наших пиков. None — наших пиков со страницей нет.
+        Свободные позиции тут ни при чём: банить стоит того, кого возьмут они."""
         return self._suggest(self.picks(self.ours), limit)
 
     def pick_suggestions(self, limit: int = DEFAULT_PICKS):
-        """Кого брать: сильнейшие против их пиков. None — их пиков со страницей нет."""
-        return self._suggest(self.picks(self.theirs), limit)
+        """Кого брать: сильнейшие против их пиков, под свободные позиции своей
+        команды (pick_filter). None — их пиков со страницей нет."""
+        return self._suggest(self.picks(self.theirs), limit, self.pick_filter())

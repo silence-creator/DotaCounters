@@ -11,10 +11,11 @@
 
 import tkinter as tk
 
+from ..config import update_config
 from ..draft import CM_BOARD, CM_ORDER, SIDES
 from ..heroes import best_match
 from .hero_browser import HeroBrowserModal
-from .role_menu import COMPACT_ROLES, RolePicker
+from .role_menu import RolePicker
 from .suggestions import HeroSuggestions
 from .widgets import EntryBox, ScrollArea, Segmented, button, separator
 
@@ -85,14 +86,13 @@ class CaptainsTab:
         roles.grid(row=2, column=0, sticky="ew", pady=(4, 0))
         tk.Label(roles, text=tr["role_label"], font=F["small"], fg=T["TEXT3"], bg=T["BG"]).pack(
             side=tk.LEFT, padx=(0, 8))
-        self._cm_roles = RolePicker(roles, T, F, tr, self._cm.role, self._set_cm_role,
-                                    main=COMPACT_ROLES)
+        self._cm_roles = RolePicker(roles, T, F, tr, self._cm.role, self._set_cm_role)
         self._cm_roles.pack(side=tk.LEFT)
 
         self._cm_hints = ScrollArea(right, T, self._scrollables)
         self._cm_hints.grid(row=3, column=0, sticky="nsew", pady=(12, 0))
         self._cm_foot = tk.Label(right, text=tr["cm_footnote"], font=F["small"], fg=T["TEXT3"],
-                                 bg=T["BG"], anchor="w", justify=tk.LEFT)
+                                 bg=T["BG"], anchor="w", justify=tk.LEFT, wraplength=620)
         self._cm_foot.grid(row=4, column=0, sticky="ew", pady=(6, 0))
 
         self._render_cm()
@@ -152,7 +152,7 @@ class CaptainsTab:
                         highlightbackground=T["GOLD"] if current else T["LINE"])
         cell.pack_propagate(False)
         if current:
-            tk.Label(cell, text=tr["cm_ban" if kind == "ban" else "cm_pick"], font=F["small_b"],
+            tk.Label(cell, text=tr["cm_" + kind], font=F["small_b"],
                      fg=T["GOLD"], bg=T["GOLD_BG"]).pack(expand=True)
         return cell
 
@@ -241,6 +241,8 @@ class CaptainsTab:
                 caption = tr["cm_pick_why"].format(heroes=", ".join(theirs)) if theirs else empty
             tk.Label(box, text=caption, font=F["small"], fg=T["TEXT3"], bg=T["BG"],
                      justify=tk.LEFT, wraplength=300).pack(anchor="w", pady=(2, 8))
+            if col == 1 and result is not None:
+                self._fill_line(box, cm, wrap=300)
             if loading:
                 tk.Label(box, text=tr["draft_missing"].format(heroes=", ".join(loading)).strip(),
                          font=F["small"], fg=T["GOLD"], bg=T["BG"]).pack(anchor="w")
@@ -270,8 +272,11 @@ class CaptainsTab:
         tk.Label(top, text=pick.hero, font=F["name"], fg=T["TEXT"], bg=T["BG"]).pack(side=tk.LEFT)
         tk.Label(top, text=self._signed(pick.total), font=F["value"], fg=color,
                  bg=T["BG"]).pack(side=tk.RIGHT)
-        tk.Label(body, text=tr["cm_hint_meta"].format(n=self._count_text(pick.matches)),
-                 font=F["small"], fg=T["TEXT3"], bg=T["BG"]).pack(anchor="w")
+        # «Мид · Тройка · 72к матчей»: что матчей — в самой редкой паре, сказано в подвале
+        meta = [self._hero_positions(pick.hero),
+                tr["cm_hint_games"].format(n=self._count_text(pick.matches))]
+        tk.Label(body, text=" · ".join(m for m in meta if m), font=F["small"], fg=T["TEXT3"],
+                 bg=T["BG"]).pack(anchor="w")
 
     # ── Действия ──────────────────────────────────────────────────────────────
 
@@ -314,6 +319,7 @@ class CaptainsTab:
 
     def _set_cm_role(self, role):
         self._cm.role = role
+        update_config(cm_role=role)
         self._cm_changed(fetch=False)
 
     def _cm_changed(self, fetch=True, retry=False):

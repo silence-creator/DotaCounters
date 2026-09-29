@@ -16,13 +16,14 @@ import threading
 import tkinter as tk
 
 from ..dotabuff import DotabuffError, FetchError, HeroNotFound, ParseError, fetch_counters
-from ..draft import CM_ORDER, GROUPS, SIDES
+from ..draft import CM_ORDER, GROUPS, SIDES, counters_with_role
+from ..positions import POSITIONS
 from ..heroes import best_match
 from ..hotkey import format_hotkey
 from ..recent import sane_position
 from .dpi import px
 from .suggestions import HeroSuggestions
-from .widgets import EntryBox, ScrollArea, Segmented, button, separator
+from .widgets import ChipRow, EntryBox, ScrollArea, Segmented, button, separator
 from .winapi import bring_to_front
 
 WIDTH, HEIGHT = 340, 620
@@ -109,8 +110,10 @@ class Overlay:
             self.win.withdraw()
 
     def refresh(self):
-        """Драфт изменился в главном окне или докачались страницы — перерисовать."""
-        if self._alive() and self.mode in ("draft", "cm"):
+        """Драфт или фильтр изменился в главном окне, докачались страницы — перерисовать."""
+        if self._alive():
+            if self._role_chips is not None and self._role_chips.value != self._mode_role():
+                self._build_role_chips()
             self._render()
 
     # ── Окно ──────────────────────────────────────────────────────────────────
@@ -165,6 +168,10 @@ class Overlay:
         # всегда, содержимое меняется: иначе pack поставил бы его в конец.
         self._controls = tk.Frame(inner, bg=T["BG"])
         self._controls.pack(fill=tk.X, pady=(8, 0))
+        # Позиция: «Все 1 2 3 4 5» — фильтр того режима, что открыт сейчас
+        self._roles_row = tk.Frame(inner, bg=T["BG"])
+        self._roles_row.pack(fill=tk.X, pady=(6, 0))
+        self._role_chips = None
 
         self._hint = tk.Label(inner, text="", font=F["small"], fg=T["TEXT3"], bg=T["BG"])
         self._hint.pack(anchor="w", pady=(8, 3))
@@ -234,10 +241,45 @@ class Overlay:
                    font="small_b").pack(side=tk.RIGHT)
         else:
             tk.Frame(self._controls, bg=T["BG"], height=1).pack()
+        self._build_role_chips()
         self._status.config(text="")
         self._render()
         if self.visible:
             self.entry.focus_set()
+
+    # ── Фильтр позиции ────────────────────────────────────────────────────────
+
+    def _mode_role(self):
+        """Фильтр режима: поиск, All Pick и Captains Mode — у каждого свой, общий с вкладкой."""
+        app = self.app
+        return {"draft": app._board.role, "cm": app._cm.role}.get(self.mode, app._search_role)
+
+    def _build_role_chips(self):
+        """«Позиция: Все 1 2 3 4 5». Роль Valve, выбранную во вкладке, — отдельной фишкой."""
+        app = self.app
+        T, tr, F = app.T, app.tr, app.F
+        for w in self._roles_row.winfo_children():
+            w.destroy()
+        tk.Label(self._roles_row, text=tr["role_label"], font=F["small"], fg=T["TEXT3"],
+                 bg=T["BG"]).pack(side=tk.LEFT, padx=(0, 6))
+        role = self._mode_role()
+        options = [(None, tr["ov_any"])] + [(p, p[-1]) for p in POSITIONS]
+        if role is not None and role not in POSITIONS:
+            options.append((role, tr["role_" + role]))
+        self._role_chips = ChipRow(self._roles_row, T, F, options, role, self._set_role)
+        self._role_chips.pack(side=tk.LEFT)
+
+    def _set_role(self, role):
+        app = self.app
+        if self.mode == "draft":
+            app._set_draft_role(role)
+        elif self.mode == "cm":
+            app._set_cm_role(role)
+        else:
+            app._set_search_role(role)
+        self._build_role_chips()      # фишка роли Valve исчезает, если выбрали позицию
+        self._render()
+        self.entry.focus_set()
 
     def _set_group(self, group):
         self._group = group
@@ -368,10 +410,13 @@ class Overlay:
         row = tk.Frame(parent, bg=T["BG"])
         row.pack(fill=tk.X, pady=4)
         tk.Label(row, image=app.photo(hero, (52, 29)), bg=T["BG"]).pack(side=tk.LEFT)
-        tk.Label(row, text=hero, font=F["name"], fg=T["TEXT"], bg=T["BG"]).pack(side=tk.LEFT,
-                                                                                padx=(10, 0))
         tk.Label(row, text=app._signed(value), font=F["value"], fg=color, bg=T["BG"]).pack(
             side=tk.RIGHT)
+        names = tk.Frame(row, bg=T["BG"])
+        names.pack(side=tk.LEFT, padx=(10, 0))
+        tk.Label(names, text=hero, font=F["name"], fg=T["TEXT"], bg=T["BG"]).pack(anchor="w")
+        tk.Label(names, text=app._hero_positions(hero), font=F["tiny"], fg=T["TEXT3"],
+                 bg=T["BG"]).pack(anchor="w")
 
     def _heading(self, parent, text, color=None, caption=""):
         app = self.app
@@ -383,6 +428,16 @@ class Overlay:
         if caption:
             tk.Label(head, text=caption, font=F["small"], fg=T["TEXT3"], bg=T["BG"]).pack(
                 side=tk.RIGHT)
+
+    def _fill_note(self, parent, model):
+        """«Под свободные позиции: …» над пиками. Выключается в главном окне."""
+        app = self.app
+        positions = model.pick_filter()
+        if positions:
+            tk.Label(parent, text=app.tr["fill_on"].format(
+                positions=app._positions_text(positions)), font=app.F["small"],
+                fg=app.T["GOLD"], bg=app.T["BG"], anchor="w", justify=tk.LEFT,
+                wraplength=WIDTH - 50).pack(fill=tk.X, pady=(0, 4))
 
     def _render_counters(self, area):
         app = self.app
@@ -405,11 +460,14 @@ class Overlay:
                 text = tr["ov_network"]
             tk.Label(area, text=text, font=F["body"], fg=T["BAD"], bg=T["BG"]).pack(anchor="w")
             return
-        for rows, color, title in ((outcome.countered_by, T["BAD"],
-                                    tr["weak_against"].format(hero=hero)),
-                                   (outcome.counters, T["GOOD"],
-                                    tr["strong_against"].format(hero=hero))):
-            self._heading(area, title, color)
+        weak, strong = outcome.countered_by, outcome.counters
+        role = app._search_role
+        if role and outcome.matchups:
+            weak, strong = counters_with_role(outcome, role, ROWS)
+        caption = tr["role_" + role] if role and outcome.matchups else ""
+        for rows, color, title in ((weak, T["BAD"], tr["weak_against"].format(hero=hero)),
+                                   (strong, T["GOOD"], tr["strong_against"].format(hero=hero))):
+            self._heading(area, title, color, caption)
             for m in rows[:ROWS]:
                 self._row(area, m.hero, abs(m.advantage_value or 0), color)
 
@@ -464,6 +522,7 @@ class Overlay:
                 anchor="w", pady=(6, 0))
             return
         self._heading(area, tr["ov_pick"], T["GOOD"])
+        self._fill_note(area, board)
         for pick in result.picks:
             self._row(area, pick.hero, pick.total, T["GOOD"])
         self._heading(area, tr["ov_avoid"], T["BAD"])
@@ -510,6 +569,8 @@ class Overlay:
             heroes = cm.picks(cm.theirs)
         caption = tr["ov_against"].format(heroes=", ".join(heroes)) if heroes else ""
         self._heading(area, title, color, caption)
+        if not our_ban:
+            self._fill_note(area, cm)
         if any(h in cm.loading for h in heroes):
             tk.Label(area, text=tr["loading"], font=F["small"], fg=T["GOLD"], bg=T["BG"]).pack(
                 anchor="w")

@@ -16,7 +16,7 @@ from PIL import Image, ImageTk
 from .. import updates
 from ..config import cache_dir, load_config, update_config
 from ..dotabuff import DEFAULT_LIMIT, DEFAULT_PERIOD, MAX_LIMIT, PERIODS, fetch_many, period_param
-from ..draft import CaptainsDraft, DraftBoard
+from ..draft import FILTERS, CaptainsDraft, DraftBoard
 from ..heroes import ALL_HEROES, resolve
 from ..hotkey import DEFAULT_HOTKEY, GlobalHotkey, format_hotkey, parse_hotkey
 from ..i18n import I18N
@@ -25,6 +25,7 @@ from ..net import create_scraper
 from ..numbers import short_count
 from ..pagecache import PageCache
 from ..patches import FALLBACK_PATCH, fetch_current_patch
+from ..positions import positions_of
 from ..recent import MAX_FAVOURITES, MAX_HISTORY, clean_list, sane_geometry
 from ..themes import THEMES, theme_key
 from . import dpi
@@ -39,10 +40,11 @@ from .updates_tab import UpdatesTab
 from .widgets import Segmented, button
 from .winapi import set_title_bar_color
 
-#: Размер окна по умолчанию и наименьший: под две колонки списков и доску
-#: Captains Mode рядом с подсказками.
+#: Размер окна по умолчанию и наименьший. Уже 1040 не помещаются шапка и
+#: правая колонка Captains Mode с фильтром позиций, ниже 700 — доска из
+#: 24 ходов (проверено снимками; в 2.0 минимум был 940×640 и всё это обрезал).
 WINDOW = (1040, 720)
-MIN_WINDOW = (940, 640)
+MIN_WINDOW = (1040, 700)
 
 TABS = ("search", "draft", "cm", "settings")
 
@@ -80,6 +82,10 @@ class DotaApp(SearchTab, DraftTab, CaptainsTab, SettingsTab, UpdatesTab):
         # Драфты: All Pick — общий со вкладкой и оверлеем; Captains Mode — тоже
         self._board = DraftBoard()
         self._cm    = CaptainsDraft()
+        # Фильтры позиции или роли и «под свободные позиции» — запоминаются
+        self._board.role = self._known_filter(cfg.get("draft_role"))
+        self._cm.role    = self._known_filter(cfg.get("cm_role"))
+        self._board.fill = self._cm.fill = cfg.get("fill_positions", True) is not False
         self._draft_group   = "enemies"      # куда пойдёт набранный герой
         self._draft_scraper = None           # одна сессия на все запросы драфтов
         self._draft_lock    = threading.Lock()
@@ -88,7 +94,7 @@ class DotaApp(SearchTab, DraftTab, CaptainsTab, SettingsTab, UpdatesTab):
         self._update_btn    = None
         self._update_status = None
         self._hotkey_note   = None           # (текст, цвет) после смены клавиши
-        self._search_role   = None
+        self._search_role   = self._known_filter(cfg.get("search_role"))
         self._last_report   = None           # последний найденный отчёт поиска
         self._last_hero     = None
         self._search_token  = 0              # отбросить устаревший ответ поиска
@@ -345,6 +351,11 @@ class DotaApp(SearchTab, DraftTab, CaptainsTab, SettingsTab, UpdatesTab):
         return [resolve(v) if isinstance(v, str) else v for v in values]
 
     @staticmethod
+    def _known_filter(value):
+        """Фильтр позиции или роли из конфига; незнакомый (руками вписанный) — никакого."""
+        return value if value in FILTERS else None
+
+    @staticmethod
     def _hotkey_setting(value):
         """Клавиша из конфига, если она разбирается; иначе стандартная."""
         try:
@@ -504,6 +515,44 @@ class DotaApp(SearchTab, DraftTab, CaptainsTab, SettingsTab, UpdatesTab):
         text = "%.2f" % abs(value)
         text = text.replace(".", self.tr["count_decimal"])
         return ("+" if value >= 0 else "−") + text
+
+    # ── Позиции ───────────────────────────────────────────────────────────────
+
+    def _positions_text(self, positions):
+        """("pos2", "pos3") -> «Мид · Тройка»."""
+        return " · ".join(self.tr["role_" + p] for p in positions)
+
+    def _hero_positions(self, hero):
+        """Позиции героя подписью: «Мид · Тройка»."""
+        return self._positions_text(positions_of(hero))
+
+    def _fill_line(self, parent, model, wrap=None):
+        """Строка над подсказками пиков: под какие свободные позиции они подобраны,
+        и ссылка-переключатель «показать всех» / «только свободные». Пока своих
+        героев нет или фильтр выбран явно, строки нет. wrap — ширина узкой колонки:
+        текст переносится, а ссылка встаёт под ним."""
+        T, tr, F = self.T, self.tr, self.F
+        needed = model.needed()
+        if model.role is not None or not needed:
+            return
+        line = tk.Frame(parent, bg=T["BG"])
+        line.pack(fill=tk.X, pady=(0, 8))
+        if model.fill:
+            text, link = tr["fill_on"].format(positions=self._positions_text(needed)), tr["fill_all"]
+        else:
+            text, link = tr["fill_off"], tr["fill_only"]
+        side = tk.TOP if wrap else tk.LEFT
+        tk.Label(line, text=text, font=F["small"], fg=T["GOLD"] if model.fill else T["TEXT3"],
+                 bg=T["BG"], justify=tk.LEFT, wraplength=wrap or 0).pack(side=side, anchor="w")
+        button(line, T, F, link, lambda: self._set_fill(not model.fill), kind="link",
+               font="small_b").pack(side=side, anchor="w", padx=(0 if wrap else 8, 0))
+
+    def _set_fill(self, on):
+        """Подбирать под свободные позиции — общий выключатель обоих драфтов."""
+        self._board.fill = self._cm.fill = on
+        update_config(fill_positions=on)
+        self._draft_changed(fetch=False)
+        self._cm_changed(fetch=False)
 
     def _percent(self, win_rate):
         """«54.29%» со страницы -> «54,3%» по языку."""

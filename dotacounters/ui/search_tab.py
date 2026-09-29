@@ -16,6 +16,7 @@ from ..dotabuff import DotabuffError, FetchError, HeroNotFound, ParseError, fetc
 from ..draft import ROLE_FILTERS, counters_with_role, has_role
 from ..heroes import best_match
 from ..icons import fetch_icons, portrait_url
+from ..positions import positions_of
 from ..recent import is_favourite, remember, toggle_favourite
 from .dpi import px_size
 from .hero_browser import HeroBrowserModal
@@ -129,10 +130,17 @@ class SearchTab:
         text = tk.Frame(inner, bg=T["PANEL"])
         text.pack(side=tk.LEFT, padx=(16 if known else 0, 0), fill=tk.X, expand=True)
         tk.Label(text, text=hero, font=F["h1"], fg=T["TEXT"], bg=T["PANEL"]).pack(anchor="w")
+        # Позиции — светлее, роли Valve за ними — серее: «Тройка · Четвёрка   Инициатор · …»
+        line = tk.Frame(text, bg=T["PANEL"])
+        line.pack(anchor="w", pady=(2, 0))
+        positions = [tr["role_" + p] for p in positions_of(hero)] if known else []
         roles = [tr["role_" + r] for r in ROLE_FILTERS if has_role(hero, r)] if known else []
+        if positions:
+            tk.Label(line, text=" · ".join(positions), font=F["body_b"], fg=T["TEXT"],
+                     bg=T["PANEL"]).pack(side=tk.LEFT, padx=(0, 14))
         if roles:
-            tk.Label(text, text=" · ".join(roles), font=F["body"], fg=T["TEXT2"],
-                     bg=T["PANEL"]).pack(anchor="w", pady=(2, 0))
+            tk.Label(line, text=" · ".join(roles), font=F["body"], fg=T["TEXT2"],
+                     bg=T["PANEL"]).pack(side=tk.LEFT)
         if status:
             tk.Label(text, text=status, font=F["body"], fg=status_fg or T["TEXT2"], bg=T["PANEL"],
                      justify=tk.LEFT, wraplength=620).pack(anchor="w", pady=(4, 0))
@@ -254,8 +262,16 @@ class SearchTab:
     # ── Роль соперников ───────────────────────────────────────────────────────
 
     def _set_search_role(self, role):
-        """Роль соперников: перерисовать последний ответ без сети."""
+        """Позиция или роль соперников: запомнить и перерисовать последний ответ без сети."""
         self._search_role = role
+        update_config(search_role=role)
+        picker = getattr(self, "_role_picker", None)
+        if picker is not None:
+            try:
+                picker.set(role)          # выбор мог прийти из оверлея
+            except tk.TclError:
+                pass
+        self._overlay.refresh()
         if self._search_state[0] == "report":
             self._render_search()
 

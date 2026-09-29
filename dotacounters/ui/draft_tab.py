@@ -7,6 +7,7 @@
 
 import tkinter as tk
 
+from ..config import update_config
 from ..draft import GROUPS
 from ..heroes import best_match
 from .hero_browser import HeroBrowserModal
@@ -96,8 +97,15 @@ class DraftTab:
             if group == "bans":
                 self._render_bans(box, heroes)
                 continue
+            if group == "allies" and heroes:
+                needed = board.needed()
+                text = tr["draft_open"].format(positions=self._positions_text(needed)) if needed \
+                    else tr["draft_all_covered"]
+                tk.Label(box, text=text, font=F["small"], fg=T["TEXT3"], bg=T["BG"]).pack(
+                    anchor="w", pady=(0, 6))
+            lineup = board.lineup() if group == "allies" else {}
             for hero in heroes:
-                self._lineup_slot(box, hero, group)
+                self._lineup_slot(box, hero, group, lineup.get(hero))
             if len(heroes) < _SLOTS[group]:
                 empty = tk.Frame(box, bg=T["BG"], highlightthickness=1, highlightbackground=T["LINE"],
                                  height=46)
@@ -106,14 +114,21 @@ class DraftTab:
                 tk.Label(empty, text=tr["draft_next_" + group], font=F["body"], fg=T["TEXT4"],
                          bg=T["BG"]).pack(side=tk.LEFT, padx=14)
 
-    def _lineup_slot(self, parent, hero, group):
+    def _lineup_slot(self, parent, hero, group, position=None):
+        """Герой состава. Под именем — позиции: у врага все, у своего — та, на
+        которую его поставила расстановка команды."""
         T, F, board = self.T, self.F, self._board
         slot = tk.Frame(parent, bg=T["PANEL"], highlightthickness=1, highlightbackground=T["LINE"])
         slot.pack(fill=tk.X, pady=(0, 6))
         tk.Label(slot, image=self.photo(hero, (64, 36)), bg=T["PANEL"]).pack(side=tk.LEFT, padx=4,
                                                                             pady=4)
-        tk.Label(slot, text=hero, font=F["name"], fg=T["TEXT"], bg=T["PANEL"]).pack(side=tk.LEFT,
-                                                                                    padx=(6, 0))
+        names = tk.Frame(slot, bg=T["PANEL"])
+        names.pack(side=tk.LEFT, padx=(6, 0))
+        tk.Label(names, text=hero, font=F["name"], fg=T["TEXT"], bg=T["PANEL"]).pack(anchor="w")
+        positions = self._positions_text((position,)) if position else self._hero_positions(hero)
+        if positions:
+            tk.Label(names, text=positions, font=F["small"], bg=T["PANEL"],
+                     fg=T["GOOD"] if position else T["TEXT3"]).pack(anchor="w")
         if hero in board.loading:
             tk.Label(slot, text="…", font=F["body"], fg=T["GOLD"], bg=T["PANEL"]).pack(side=tk.LEFT,
                                                                                     padx=6)
@@ -173,6 +188,8 @@ class DraftTab:
         for text, color in notes:
             tk.Label(area, text=text.strip(), font=F["body"], fg=color, bg=T["BG"],
                      justify=tk.LEFT, wraplength=620).pack(anchor="w", pady=(0, 6))
+        if result is not None:
+            self._fill_line(area, board)
         if not result or not result.picks:
             if result is not None:
                 tk.Label(area, text=tr["draft_nothing"].strip(), font=F["body"], fg=T["BAD"],
@@ -198,6 +215,8 @@ class DraftTab:
             tk.Label(card, image=self.photo(pick.hero, (96, 54)), bg=T["BG"]).pack(anchor="w")
             tk.Label(card, text=pick.hero, font=F["small_b"], fg=T["TEXT"], bg=T["BG"]).pack(
                 anchor="w", pady=(4, 0))
+            tk.Label(card, text=self._hero_positions(pick.hero), font=F["tiny"], fg=T["TEXT3"],
+                     bg=T["BG"]).pack(anchor="w")
             tk.Label(card, text=self._signed(pick.total), font=F["value"], fg=T["BAD"],
                      bg=T["BG"]).pack(anchor="w")
         self._draft_status.config(text=tr["draft_footnote2"])
@@ -225,8 +244,11 @@ class DraftTab:
             who = tk.Frame(table, bg=T["BG"])
             who.grid(row=r + 1, column=0, sticky="w", pady=6)
             tk.Label(who, image=self.photo(pick.hero, (56, 32)), bg=T["BG"]).pack(side=tk.LEFT)
-            tk.Label(who, text=pick.hero, font=F["name"], fg=T["TEXT"], bg=T["BG"]).pack(
-                side=tk.LEFT, padx=(10, 0))
+            names = tk.Frame(who, bg=T["BG"])
+            names.pack(side=tk.LEFT, padx=(10, 0))
+            tk.Label(names, text=pick.hero, font=F["name"], fg=T["TEXT"], bg=T["BG"]).pack(anchor="w")
+            tk.Label(names, text=self._hero_positions(pick.hero), font=F["small"], fg=T["TEXT3"],
+                     bg=T["BG"]).pack(anchor="w")
             tk.Label(table, text=self._signed(pick.total), font=F["value"], fg=T["GOOD"],
                      bg=T["BG"]).grid(row=r + 1, column=1, sticky="e", padx=(0, 14))
             for j, enemy in enumerate(enemies):
@@ -247,6 +269,7 @@ class DraftTab:
 
     def _set_draft_role(self, role):
         self._board.role = role
+        update_config(draft_role=role)
         self._draft_changed(fetch=False)
 
     def _add_draft_hero(self, hero):

@@ -96,6 +96,7 @@ class DraftTest(unittest.TestCase):
     def test_we_play_dire(self):
         cm = CaptainsDraft()
         cm.ours = "dire"
+        cm.fill = False     # здесь про стороны; у Dire уже керри, Lifestealer иначе отсеется
         for hero in ("B1", "B2", "B3", "B4", "B5", "B6", "B7", "Mars", "Drow Ranger"):
             cm.play(hero)
         cm.store("Drow Ranger", report=FakeReport([("Earth Spirit", 2.3)]))

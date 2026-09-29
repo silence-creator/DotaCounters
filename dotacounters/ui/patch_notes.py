@@ -221,6 +221,10 @@ class PatchNotesModal(tk.Toplevel):
             return False
 
     def _apply_notes(self, sections: list[dict]):
+        # Окно могли закрыть, пока заметки качались: вызов через after всё равно
+        # придёт, а виджетов уже нет.
+        if not self.winfo_exists():
+            return
         self._all_sections = sections
         self._render_sections(sections)
 

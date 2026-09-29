@@ -1,17 +1,18 @@
-"""Выбор роли: ряд «фишек» с основными ролями и меню «Ещё ▾» для остальных.
+"""Выбор позиции или роли: «фишки» позиций 1–5 и меню «Ещё ▾» с ролями Valve.
 
-Роли — по разметке Valve (draft.ROLE_FILTERS). Используется в поиске, в
-обоих драфтах и в оверлее.
+Позиции — по статистике линий Dotabuff (positions.py), роли — по разметке
+Valve (draft.ROLE_FILTERS). Используется в поиске и в обоих драфтах.
 """
 
 import tkinter as tk
 
 from ..draft import ROLE_FILTERS
+from ..positions import POSITIONS
 from .widgets import ChipRow
 
-#: Роли, что стоят «фишками»; остальные — в меню «Ещё».
-MAIN_ROLES = ("carry", "support", "initiator", "disabler", "nuker")
-COMPACT_ROLES = ("carry", "support")
+#: Что стоит «фишками»; роли Valve — в меню «Ещё». Керри Valve в меню нет:
+#: его заменяет позиция 1 с той же подписью.
+MAIN_ROLES = POSITIONS
 _MORE = "__more__"
 
 
@@ -22,7 +23,7 @@ class RolePicker(tk.Frame):
         bg = bg or T["BG"]
         super().__init__(parent, bg=bg)
         self.T, self.F, self.tr, self._on_change, self.main = T, F, tr, on_change, main
-        self.extra = [r for r in ROLE_FILTERS if r not in main]
+        self.extra = [r for r in ROLE_FILTERS if r not in main and r != "carry"]
         self.value = current
         self.chips = ChipRow(self, T, F, [(None, tr["role_any"])] +
                              [(r, tr["role_" + r]) for r in main],
