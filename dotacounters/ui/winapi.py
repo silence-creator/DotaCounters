@@ -43,3 +43,19 @@ def bring_to_front(window):
             user32.AttachThreadInput(mine, other, False)
     except Exception:
         pass
+
+
+def exclude_from_capture(window, on=True):
+    """Не показывать окно в снимках экрана (Windows 10 2004 и новее).
+
+    Оверлей лежит поверх игры, а считывание драфта, когда PrintWindow отдал
+    чёрный кадр, снимает экран — и сняло бы оверлей вместо доски. С этим
+    флагом окно видно на мониторе, но не в снимках. Выключается, когда
+    считывание выключено: тогда оверлей можно показать на трансляции.
+    """
+    try:
+        WDA_NONE, WDA_EXCLUDEFROMCAPTURE = 0x0, 0x11
+        hwnd = int(window.wm_frame(), 16)
+        ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE if on else WDA_NONE)
+    except Exception:
+        pass

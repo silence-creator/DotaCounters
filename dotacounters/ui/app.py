@@ -36,6 +36,7 @@ from .draft_tab import DraftTab
 from .evaluation_view import EvaluationView
 from .overlay import Overlay
 from .patch_notes import PatchNotesModal
+from .screen_watch import ScreenWatch
 from .search_tab import SearchTab
 from .settings_tab import SettingsTab
 from .style import make_fonts
@@ -52,7 +53,8 @@ MIN_WINDOW = (1040, 700)
 TABS = ("search", "draft", "cm", "settings")
 
 
-class DotaApp(SearchTab, DraftTab, CaptainsTab, EvaluationView, SettingsTab, UpdatesTab):
+class DotaApp(SearchTab, DraftTab, CaptainsTab, EvaluationView, SettingsTab, UpdatesTab,
+              ScreenWatch):
     """Главное окно. Состояние общее для вкладок; вкладки — примеси."""
 
     def __init__(self, root):
@@ -114,6 +116,8 @@ class DotaApp(SearchTab, DraftTab, CaptainsTab, EvaluationView, SettingsTab, Upd
         self._hotkey = GlobalHotkey(self._hotkey_text,
                                     lambda: self.root.after(0, self._overlay.toggle))
         self._hotkey_ok = self._hotkey.start()
+        # Считывание драфта с экрана игры (screen_watch.py)
+        self._init_screen(cfg)
 
         self._apply_theme_styles()
         self._build_ui()
@@ -152,6 +156,7 @@ class DotaApp(SearchTab, DraftTab, CaptainsTab, EvaluationView, SettingsTab, Upd
     def _on_close(self):
         """Запомнить геометрию и закрыться."""
         self._hotkey.stop()
+        self._watch_on = False
         try:
             if self.root.state() == "normal":   # у развёрнутого окна размер чужой
                 update_config(window=self.root.winfo_geometry())

@@ -85,6 +85,7 @@ class CaptainsTab:
                                                                              padx=(8, 0))
         self._cm_message = tk.Label(entry_row, text="", font=F["small"], fg=T["TEXT3"], bg=T["BG"])
         self._cm_message.pack(anchor="w", pady=(4, 0))
+        self._screen_panel(entry_row, wrap=560).pack(fill=tk.X, pady=(2, 0))
 
         roles = tk.Frame(right, bg=T["BG"])
         roles.grid(row=2, column=0, sticky="ew", pady=(4, 0))
@@ -401,6 +402,7 @@ class CaptainsTab:
 
     def _cm_reset(self):
         self._cm.reset()
+        self._screen_reset("captains")
         self._cm_message.config(text="")
         self._cm_changed(fetch=False)
 

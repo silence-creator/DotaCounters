@@ -16,6 +16,7 @@ from dotacounters.evaluate import LANES  # noqa: E402
 from dotacounters.i18n import I18N  # noqa: E402
 from dotacounters.meta import RANKS  # noqa: E402
 from dotacounters.ui.app import TABS  # noqa: E402
+from dotacounters.ui.screen_watch import STATES  # noqa: E402
 from dotacounters.version import APP_VERSION  # noqa: E402
 
 
@@ -55,6 +56,7 @@ PREFIX_KEYS = {
     "draft_to_": GROUPS, "draft_row_": GROUPS, "draft_next_": ("enemies", "allies"),
     "ov_group_": GROUPS, "rank_": RANKS, "rank_short_": RANKS,
     "lane_": tuple(lane for lane, _, _ in LANES),
+    "scr_": STATES,
 }
 _SOURCES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         "dotacounters")

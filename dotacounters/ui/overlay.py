@@ -24,7 +24,7 @@ from ..recent import sane_position
 from .dpi import px
 from .suggestions import HeroSuggestions
 from .widgets import ChipRow, EntryBox, ScrollArea, Segmented, button, separator
-from .winapi import bring_to_front
+from .winapi import bring_to_front, exclude_from_capture
 
 WIDTH, HEIGHT = 340, 700
 ROWS = 6                     # строк в списках оверлея — дальше не влезает
@@ -48,6 +48,8 @@ class Overlay:
         # запросы. По одному за раз: сессия не рассчитана на несколько потоков.
         self._scraper = None
         self._net_lock = threading.Lock()
+        # Прятать окно из снимков экрана, пока идёт считывание драфта
+        self._hidden_from_capture = False
 
     # ── Показ и скрытие ───────────────────────────────────────────────────────
 
@@ -83,7 +85,16 @@ class Overlay:
         self.win.deiconify()
         self.win.lift()
         self.win.attributes("-topmost", True)
+        if self._hidden_from_capture:
+            exclude_from_capture(self.win, True)
         self._focus()
+
+    def exclude_from_capture(self, on):
+        """Считывание драфта включили или выключили: оверлей не должен попасть
+        в снимок экрана вместо доски (winapi.exclude_from_capture)."""
+        self._hidden_from_capture = on
+        if self._alive():
+            exclude_from_capture(self.win, on)
 
     def hide(self):
         if self._alive():
@@ -237,10 +248,13 @@ class Overlay:
         for w in self._controls.winfo_children():
             w.destroy()
         if mode == "draft":
-            Segmented(self._controls, T, F, [(g, tr["ov_group_" + g]) for g in GROUPS],
+            groups = tk.Frame(self._controls, bg=T["BG"])
+            groups.pack(fill=tk.X)
+            Segmented(groups, T, F, [(g, tr["ov_group_" + g]) for g in GROUPS],
                       self._group, self._set_group, font="small_b", padx=9).pack(side=tk.LEFT)
-            button(self._controls, T, F, tr["ov_clear"], self._clear, kind="link",
+            button(groups, T, F, tr["ov_clear"], self._clear, kind="link",
                    font="small_b").pack(side=tk.RIGHT)
+            app._screen_panel(self._controls, wrap=WIDTH - 40).pack(fill=tk.X, pady=(6, 0))
         elif mode == "cm":
             # «Мы: Radiant | Dire   Первые: Radiant | Dire» — то же, что во вкладке
             sides = tk.Frame(self._controls, bg=T["BG"])
@@ -262,6 +276,7 @@ class Overlay:
                    font="small_b").pack(side=tk.LEFT)
             button(actions, T, F, tr["cm_reset"], self._cm_reset, kind="link",
                    font="small_b").pack(side=tk.RIGHT)
+            app._screen_panel(self._controls, wrap=WIDTH - 40).pack(fill=tk.X, pady=(6, 0))
         else:
             tk.Frame(self._controls, bg=T["BG"], height=1).pack()
         self._build_role_chips()
@@ -383,6 +398,7 @@ class Overlay:
 
     def _clear(self):
         self.app._board.clear()
+        self.app._screen_reset("allpick")
         self._set_status("")
         self.app._draft_changed()
 
@@ -408,6 +424,7 @@ class Overlay:
 
     def _cm_reset(self):
         self.app._cm.reset()
+        self.app._screen_reset("captains")
         self._set_status("")
         self.app._cm_changed(fetch=False)
 

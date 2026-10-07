@@ -33,6 +33,8 @@ class DraftTab:
         aside_area.grid(row=0, column=0, sticky="nsw", padx=(24, 0), pady=(18, 12))
         aside_area.canvas.config(width=300)
         aside = aside_area.inner
+        # Считывание с экрана игры — над ручным вводом
+        self._screen_panel(aside, wrap=290).pack(fill=tk.X, pady=(0, 14))
         tk.Label(aside, text=tr["draft_add"], font=F["small"], fg=T["TEXT3"],
                  bg=T["BG"]).pack(anchor="w", pady=(0, 5))
         self._draft_box = EntryBox(aside, T, F, placeholder=tr["name_placeholder"], width=26)

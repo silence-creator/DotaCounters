@@ -230,6 +230,25 @@ I18N = {
         "ov_against":        "against {heroes}",
         "ov_any":            "All",
 
+        # ── Считывание с экрана
+        "scr_off":           "Read from screen",
+        "scr_on":            "Reading the screen ✓",
+        "scr_hint":          "Recognises heroes on the Dota draft screen by itself. Needs windowed or borderless window mode.",
+        "scr_loading":       "Preparing hero portraits…",
+        "scr_portraits_failed": "Could not load hero portraits — check the connection",
+        "scr_missing":       "Dota 2 is not running",
+        "scr_minimized":     "Dota 2 is minimised",
+        "scr_black":         "The game image is black — switch Dota to borderless window mode",
+        "scr_idle":          "Open Draft or Captains Mode — here or in the overlay",
+        "scr_no_draft":      "Waiting for the draft screen",
+        "scr_watching":      "Watching the draft · heroes recognised: {n}",
+        "scr_side_unknown":  "Can't tell which side you play on",
+        "scr_conflict":      "Move {n}: the screen shows {screen}, but {model} is recorded",
+        "scr_error":         "Reading failed: {detail}",
+        "scr_ask_slot":      "{side} {n} — who is it?",
+        "scr_ask_move":      "Move {n} — who is it?",
+        "scr_other":         "other…",
+
         # ── Список героев
         "hb_title":          "All heroes",
         "hb_sorted":         "heroes  ·  sorted A → Z",
@@ -293,7 +312,12 @@ I18N = {
         "upd_restart":       "Restarting…",
         "upd_error":         "Update failed: {detail}",
         "upd_title":         "Updates",
-        "upd_text":          "v2.3\n"
+        "upd_text":          "v2.4\n"
+                             "Reading the draft from the screen — the «Read from screen» switch in Draft, Captains Mode and the overlay. Once a second the program looks at the Dota window and recognises heroes by their portraits: in All Pick from the top bar (your team and the enemies are told apart by your name), in Captains Mode from the board with bans, who moves first and your side. A hero is recorded only when several shots in a row agree; a hero someone only hovers over is not a pick.\n"
+                             "The program never fills in a hero it is unsure of: such a cell shows a question with three candidates — one click. The confirmed cell is remembered, so a hero in a set that does not look like his portrait is recognised next time.\n"
+                             "Works with Dota in windowed or borderless window mode; in exclusive fullscreen Windows does not let other programs see the game.\n"
+                             "\n"
+                             "v2.3\n"
                              "Draft evaluation — in the Draft and Captains Mode tabs, next to the suggestions: which team is ahead on matchups and by how much, a table of every hero against every enemy, the best and the most dangerous pairs, the lanes by positions and the heroes' win rate in the meta. After the last Captains Mode move it opens by itself.\n"
                              "Captains Mode: before the enemy picks anyone, picks are suggested from the meta too — the strongest heroes for your open positions.\n"
                              "Overlay in Captains Mode: shows both who to ban and who to pick, and lets you choose your side and who moves first. The overlay is taller.\n"
@@ -600,6 +624,25 @@ I18N = {
         "ov_against":        "против {heroes}",
         "ov_any":            "Все",
 
+        # ── Считывание с экрана
+        "scr_off":           "Читать с экрана",
+        "scr_on":            "Читаю экран ✓",
+        "scr_hint":          "Программа сама узнаёт героев на экране драфта Dota. Нужен режим «В окне» или «В окне без рамки».",
+        "scr_loading":       "Готовлю портреты героев…",
+        "scr_portraits_failed": "Не удалось загрузить портреты героев — проверьте сеть",
+        "scr_missing":       "Dota 2 не запущена",
+        "scr_minimized":     "Dota 2 свёрнута",
+        "scr_black":         "Изображение игры чёрное — включите в Dota режим «В окне без рамки»",
+        "scr_idle":          "Откройте «Драфт» или Captains Mode — здесь или в оверлее",
+        "scr_no_draft":      "Жду экран драфта",
+        "scr_watching":      "Слежу за драфтом · узнано героев: {n}",
+        "scr_side_unknown":  "Не видно, за какую сторону вы играете",
+        "scr_conflict":      "Ход {n}: на экране {screen}, а записан {model}",
+        "scr_error":         "Ошибка считывания: {detail}",
+        "scr_ask_slot":      "{side} {n} — кто это?",
+        "scr_ask_move":      "Ход {n} — кто это?",
+        "scr_other":         "другой…",
+
         # ── Список героев
         "hb_title":          "Все герои",
         "hb_sorted":         "героев  ·  по алфавиту",
@@ -663,7 +706,12 @@ I18N = {
         "upd_restart":       "Перезапуск…",
         "upd_error":         "Не удалось обновить: {detail}",
         "upd_title":         "Обновления",
-        "upd_text":          "v2.3\n"
+        "upd_text":          "v2.4\n"
+                             "Считывание драфта с экрана — выключатель «Читать с экрана» во вкладках «Драфт», Captains Mode и в оверлее. Раз в секунду программа смотрит в окно Dota и узнаёт героев по портретам: в All Pick — по верхней полосе (своих и врагов отличает по вашему имени), в Captains Mode — по доске, вместе с банами, первым ходом и вашей стороной. Герой записывается, только когда несколько снимков подряд согласны; герой, которого игрок лишь навёл, — не пик.\n"
+                             "Неуверенного героя программа никогда не подставляет: в такой клетке — вопрос и три кандидата на один щелчок. Подтверждённая клетка запоминается, и герой в наборе, не похожий на свой портрет, в следующий раз узнаётся.\n"
+                             "Работает, когда Dota в окне или в окне без рамки: в полноэкранном исключительном режиме Windows не даёт другим программам видеть игру.\n"
+                             "\n"
+                             "v2.3\n"
                              "Оценка драфта — во вкладках «Драфт» и «Captains Mode», рядом с подсказками: какая команда сильнее по матчапам и насколько, таблица «каждый против каждого», выгодные и опасные пары, линии по позициям и винрейт героев в мете. После последнего хода Captains Mode открывается сама.\n"
                              "Captains Mode: пока противник никого не взял, пики тоже подсказываются по мете — сильнейшие герои под ваши свободные позиции.\n"
                              "Оверлей в Captains Mode: показывает и кого банить, и кого брать, и позволяет выбрать сторону и первый ход. Оверлей стал выше.\n"
