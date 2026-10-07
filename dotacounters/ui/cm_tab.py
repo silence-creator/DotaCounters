@@ -223,6 +223,13 @@ class CaptainsTab:
         area = self._cm_hints.inner
         for w in area.winfo_children():
             w.destroy()
+        self._view_switch(area, self._cm_view, self._set_cm_view)
+        if self._cm_view == "eval":
+            tr = self.tr
+            ours = tr["eval_you"].format(side=tr["side_" + cm.ours])
+            self._render_evaluation(area, cm.picks(cm.ours), cm.picks(cm.theirs), cm.reports,
+                                    (ours, tr["side_" + cm.theirs]), loading=cm.loading)
+            return
         cols = tk.Frame(area, bg=T["BG"])
         cols.pack(fill=tk.BOTH, expand=True, padx=(0, 16))
         cols.columnconfigure((0, 1), weight=1, uniform="hint")
@@ -230,11 +237,21 @@ class CaptainsTab:
         bans.grid(row=0, column=0, sticky="nsew", padx=(0, 20))
         picks = tk.Frame(cols, bg=T["BG"])
         picks.grid(row=0, column=1, sticky="nsew")
+        # До своих пиков баны — по мете, до их пиков пики — тоже; меню ранга — у первой
+        # колонки с метой, одно на обе
         if cm.bans_by_meta:
-            self._render_cm_meta_bans(bans)
+            self._render_cm_meta(bans, "ban", rank_menu=True)
         else:
             self._render_cm_counter_hints(bans, "ban")
-        self._render_cm_counter_hints(picks, "pick")
+        if cm.picks_by_meta:
+            self._render_cm_meta(picks, "pick", rank_menu=not cm.bans_by_meta)
+        else:
+            self._render_cm_counter_hints(picks, "pick")
+
+    def _set_cm_view(self, view):
+        self._cm_view = view
+        self._render_cm_hints()
+        self._cm_hints.to_top()
 
     def _cm_hint_status(self, box, heroes):
         """Под заголовком колонки: какие страницы ещё качаются, какие не загрузились."""
@@ -260,12 +277,8 @@ class CaptainsTab:
             caption = tr["cm_ban_why"].format(heroes=", ".join(heroes))
         else:
             heroes, result = cm.picks(cm.theirs), cm.pick_suggestions(self._limit)
-            next_pick = cm.next_pick(cm.ours)
-            title = tr["cm_pick_at"].format(n=next_pick + 1) if next_pick is not None \
-                else tr["cm_pick_title"]
-            color = T["GOOD"]
-            caption = tr["cm_pick_why"].format(heroes=", ".join(heroes)) if heroes \
-                else tr["cm_pick_empty"]
+            title, color = self._cm_pick_title(), T["GOOD"]
+            caption = tr["cm_pick_why"].format(heroes=", ".join(heroes))
         tk.Label(box, text=title, font=F["h2"], fg=T["TEXT"], bg=T["BG"]).pack(anchor="w")
         tk.Label(box, text=caption, font=F["small"], fg=T["TEXT3"], bg=T["BG"],
                  justify=tk.LEFT, wraplength=HINT_WRAP).pack(anchor="w", pady=(2, 8))
@@ -282,18 +295,29 @@ class CaptainsTab:
             self._cm_hint_row(box, pick.hero, self._signed(pick.total), color,
                               tr["cm_hint_games"].format(n=self._count_text(pick.matches)))
 
-    def _render_cm_meta_bans(self, box):
-        """Баны до своих пиков — по мете: сильнейшие по винрейту в выбранном ранге."""
+    def _cm_pick_title(self):
+        """«Ваш пик на ходу 13» — или просто «Ваш пик», когда пиков больше нет."""
+        tr, cm = self.tr, self._cm
+        next_pick = cm.next_pick(cm.ours)
+        return tr["cm_pick_at"].format(n=next_pick + 1) if next_pick is not None \
+            else tr["cm_pick_title"]
+
+    def _render_cm_meta(self, box, kind, rank_menu=True):
+        """Подсказки по мете, пока считать контрпики не от чего: баны — до своих
+        пиков, пики — до их пиков. Сильнейшие по винрейту в выбранном ранге."""
         T, tr, F, cm = self.T, self.tr, self.F, self._cm
+        ban = kind == "ban"
         head = tk.Frame(box, bg=T["BG"])
         head.pack(fill=tk.X)
-        tk.Label(head, text=tr["cm_ban_title"], font=F["h2"], fg=T["TEXT"], bg=T["BG"]).pack(
-            side=tk.LEFT)
-        self._rank_menu(head).pack(side=tk.RIGHT)
-        tk.Label(box, text=tr["meta_why"].format(pick=int(MIN_PICK)), font=F["small"],
+        tk.Label(head, text=tr["cm_ban_title"] if ban else self._cm_pick_title(), font=F["h2"],
+                 fg=T["TEXT"], bg=T["BG"]).pack(side=tk.LEFT)
+        if rank_menu:
+            self._rank_menu(head).pack(side=tk.RIGHT)
+        tk.Label(box, text=(tr["meta_why"] if ban else tr["meta_pick_why"]).format(
+                     pick=int(MIN_PICK)), font=F["small"],
                  fg=T["TEXT3"], bg=T["BG"], justify=tk.LEFT, wraplength=HINT_WRAP).pack(
                      anchor="w", pady=(2, 8))
-        result = cm.meta_bans(self._limit)
+        result = cm.meta_bans(self._limit) if ban else cm.meta_picks(self._limit)
         if result is None:
             self._fetch_meta()
             if cm.meta_error is not None:
@@ -305,9 +329,9 @@ class CaptainsTab:
                 tk.Label(box, text=tr["loading"], font=F["small"], fg=T["GOLD"],
                          bg=T["BG"]).pack(anchor="w")
             return
-        self._fill_line(box, cm, wrap=HINT_WRAP, theirs=True)
+        self._fill_line(box, cm, wrap=HINT_WRAP, theirs=ban)
         for row in result:
-            self._cm_hint_row(box, row.hero, self._percent(row.win), T["BAD"],
+            self._cm_hint_row(box, row.hero, self._percent(row.win), T["BAD"] if ban else T["GOOD"],
                               tr["meta_pick"].format(pick=self._percent(row.pick)))
 
     def _rank_menu(self, parent):
@@ -341,7 +365,7 @@ class CaptainsTab:
         meta = [self._hero_positions(hero), detail]
         # Три позиции и пояснение в узкую колонку не влезают — переносится
         tk.Label(body, text=" · ".join(m for m in meta if m), font=F["small"], fg=T["TEXT3"],
-                 bg=T["BG"], justify=tk.LEFT, wraplength=HINT_WRAP - 70).pack(anchor="w")
+                 bg=T["BG"], justify=tk.LEFT, wraplength=HINT_WRAP - 55).pack(anchor="w")
 
     # ── Действия ──────────────────────────────────────────────────────────────
 
@@ -361,7 +385,13 @@ class CaptainsTab:
             self._cm_message.config(text=tr["cm_done_hint"], fg=T["TEXT3"])
             return
         self._cm_message.config(text="")
+        self._cm_finished()
         self._cm_changed()
+
+    def _cm_finished(self):
+        """Последний ход сделан — подсказки больше не нужны, показать оценку драфта."""
+        if self._cm.current is None:
+            self._cm_view = "eval"
 
     def _cm_undo(self):
         hero = self._cm.undo()

@@ -26,8 +26,9 @@ from .suggestions import HeroSuggestions
 from .widgets import ChipRow, EntryBox, ScrollArea, Segmented, button, separator
 from .winapi import bring_to_front
 
-WIDTH, HEIGHT = 340, 620
+WIDTH, HEIGHT = 340, 700
 ROWS = 6                     # строк в списках оверлея — дальше не влезает
+CM_ROWS = 3                  # в Captains Mode списков два — баны и пики, оба на виду
 
 
 class Overlay:
@@ -114,6 +115,12 @@ class Overlay:
         if self._alive():
             if self._role_chips is not None and self._role_chips.value != self._mode_role():
                 self._build_role_chips()
+            if self.mode == "cm":
+                try:                          # сторону могли сменить во вкладке
+                    self._ours_seg.set(self.app._cm.ours)
+                    self._first_seg.set(self.app._cm.first)
+                except (AttributeError, tk.TclError):
+                    pass
             self._render()
 
     # ── Окно ──────────────────────────────────────────────────────────────────
@@ -235,9 +242,25 @@ class Overlay:
             button(self._controls, T, F, tr["ov_clear"], self._clear, kind="link",
                    font="small_b").pack(side=tk.RIGHT)
         elif mode == "cm":
-            button(self._controls, T, F, tr["cm_undo"], self._cm_undo, kind="link",
+            # «Мы: Radiant | Dire   Первые: Radiant | Dire» — то же, что во вкладке
+            sides = tk.Frame(self._controls, bg=T["BG"])
+            sides.pack(fill=tk.X)
+            cm = app._cm
+            for label, value, handler, attr in ((tr["ov_we"], cm.ours, app._set_cm_ours,
+                                                 "_ours_seg"),
+                                                (tr["ov_first"], cm.first, app._set_cm_first,
+                                                 "_first_seg")):
+                tk.Label(sides, text=label, font=F["small"], fg=T["TEXT3"], bg=T["BG"]).pack(
+                    side=tk.LEFT, padx=(0 if attr == "_ours_seg" else 10, 4))
+                seg = Segmented(sides, T, F, [(s, tr["side_" + s]) for s in SIDES], value,
+                                handler, font="small_b", padx=5)
+                seg.pack(side=tk.LEFT)
+                setattr(self, attr, seg)
+            actions = tk.Frame(self._controls, bg=T["BG"])
+            actions.pack(fill=tk.X, pady=(6, 0))
+            button(actions, T, F, tr["cm_undo"], self._cm_undo, kind="link",
                    font="small_b").pack(side=tk.LEFT)
-            button(self._controls, T, F, tr["cm_reset"], self._cm_reset, kind="link",
+            button(actions, T, F, tr["cm_reset"], self._cm_reset, kind="link",
                    font="small_b").pack(side=tk.RIGHT)
         else:
             tk.Frame(self._controls, bg=T["BG"], height=1).pack()
@@ -375,6 +398,7 @@ class Overlay:
             self._set_status(app.tr["cm_done_hint"])
             return
         self._set_status("")
+        app._cm_finished()
         app._cm_changed()
 
     def _cm_undo(self):
@@ -549,57 +573,61 @@ class Overlay:
                      fg=T["GOLD"] if ours else T["TEXT"], bg=T["BG"]).pack(side=tk.LEFT)
             tk.Label(head, text=tr["ov_step"].format(n=index + 1, total=len(CM_ORDER)),
                      font=F["small"], fg=T["TEXT3"], bg=T["BG"]).pack(side=tk.RIGHT, anchor="s")
-        box = tk.Frame(area, bg=T["TOPBAR"], highlightthickness=1, highlightbackground=T["LINE"])
-        box.pack(fill=tk.X, pady=(8, 0))
-        for side in SIDES:
-            color = T["RADIANT"] if side == "radiant" else T["DIRE"]
-            label = tr["side_" + side].upper()
-            self._lineup_strip(box, cm.picks(side), color, label)
-            if cm.bans(side):
-                self._lineup_strip(box, cm.bans(side), T["TEXT3"], "", ban=True)
-        # Подсказки к своему ближайшему ходу, начиная с текущего: бан — кого банить,
-        # пик — кого брать. Пока ходят они, заранее видно, что делать дальше.
+        if any(cm.heroes):                 # пустой состав места не занимает
+            box = tk.Frame(area, bg=T["TOPBAR"], highlightthickness=1,
+                           highlightbackground=T["LINE"])
+            box.pack(fill=tk.X, pady=(8, 0))
+            for side in SIDES:
+                color = T["RADIANT"] if side == "radiant" else T["DIRE"]
+                label = tr["side_" + side].upper()
+                self._lineup_strip(box, cm.picks(side), color, label)
+                if cm.bans(side):
+                    self._lineup_strip(box, cm.bans(side), T["TEXT3"], "", ban=True)
+        # Подсказки к своим оставшимся ходам: и кого банить, и кого брать; первой —
+        # та, что нужна на ближайшем своём ходу. Пока ходят они, видно, что дальше.
         ahead = [] if index is None else [i for i in range(index, len(CM_ORDER))
                                           if cm.side(i) == cm.ours]
-        our_ban = bool(ahead) and cm.kind(ahead[0]) == "ban"
-        limit = min(app._limit, ROWS)
-        if our_ban and cm.bans_by_meta:
-            self._render_meta_bans(area, limit)
+        kinds = []
+        for i in ahead:
+            if cm.kind(i) not in kinds:
+                kinds.append(cm.kind(i))
+        limit = min(app._limit, CM_ROWS)
+        for kind in kinds:
+            self._render_cm_hints(area, kind, limit)
+
+    def _render_cm_hints(self, area, kind, limit):
+        """Кого банить или кого брать. Пока считать контрпики не от чего — по мете:
+        баны до своих пиков, пики до их пиков (ранг — во вкладке Captains Mode)."""
+        app = self.app
+        T, tr, F, cm = app.T, app.tr, app.F, app._cm
+        ban = kind == "ban"
+        title, color = (tr["cm_ban_title"], T["BAD"]) if ban else (tr["cm_pick_title"], T["GOOD"])
+        if cm.bans_by_meta if ban else cm.picks_by_meta:
+            self._heading(area, title, color, tr["ov_meta"].format(
+                rank=tr["rank_short_" + cm.rank]))
+            self._fill_note(area, cm, theirs=ban)
+            result = cm.meta_bans(limit) if ban else cm.meta_picks(limit)
+            if result is None:
+                app._fetch_meta()
+                text, fg = ((tr["meta_failed"].format(detail=cm.meta_error), T["BAD"])
+                            if cm.meta_error is not None else (tr["loading"], T["GOLD"]))
+                tk.Label(area, text=text, font=F["small"], fg=fg, bg=T["BG"], justify=tk.LEFT,
+                         wraplength=WIDTH - 50).pack(anchor="w")
+                return
+            for row in result:
+                self._row(area, row.hero, None, color, text=app._percent(row.win))
             return
-        if our_ban:
-            result, title, color = cm.ban_suggestions(limit), tr["cm_ban_title"], T["BAD"]
-            heroes = cm.picks(cm.ours)
-        else:
-            result, title, color = cm.pick_suggestions(limit), tr["cm_pick_title"], T["GOOD"]
-            heroes = cm.picks(cm.theirs)
-        caption = tr["ov_against"].format(heroes=", ".join(heroes)) if heroes else ""
-        self._heading(area, title, color, caption)
-        self._fill_note(area, cm, theirs=our_ban)
-        if any(h in cm.loading for h in heroes):
+        heroes = cm.picks(cm.ours) if ban else cm.picks(cm.theirs)
+        result = cm.ban_suggestions(limit) if ban else cm.pick_suggestions(limit)
+        self._heading(area, title, color, tr["ov_against"].format(heroes=", ".join(heroes)))
+        self._fill_note(area, cm, theirs=ban)
+        if any(h in cm.loading for h in heroes) or result is None:
             tk.Label(area, text=tr["loading"], font=F["small"], fg=T["GOLD"], bg=T["BG"]).pack(
                 anchor="w")
         if result is None:
-            tk.Label(area, text=tr["cm_ban_empty"] if our_ban else tr["cm_pick_empty"],
-                     font=F["small"], fg=T["TEXT3"], bg=T["BG"], justify=tk.LEFT,
-                     wraplength=WIDTH - 50).pack(anchor="w")
             return
+        if not result.picks:
+            tk.Label(area, text=tr["ov_nothing"], font=F["small"], fg=T["BAD"], bg=T["BG"],
+                     justify=tk.LEFT, wraplength=WIDTH - 50).pack(anchor="w")
         for pick in result.picks:
             self._row(area, pick.hero, pick.total, color)
-
-    def _render_meta_bans(self, area, limit):
-        """Баны до своих пиков — по мете (ранг выбирается во вкладке Captains Mode)."""
-        app = self.app
-        T, tr, F, cm = app.T, app.tr, app.F, app._cm
-        self._heading(area, tr["cm_ban_title"], T["BAD"], tr["ov_meta"].format(
-            rank=tr["rank_short_" + cm.rank]))
-        self._fill_note(area, cm, theirs=True)
-        result = cm.meta_bans(limit)
-        if result is None:
-            app._fetch_meta()
-            text, color = ((tr["meta_failed"].format(detail=cm.meta_error), T["BAD"])
-                           if cm.meta_error is not None else (tr["loading"], T["GOLD"]))
-            tk.Label(area, text=text, font=F["small"], fg=color, bg=T["BG"], justify=tk.LEFT,
-                     wraplength=WIDTH - 50).pack(anchor="w")
-            return
-        for row in result:
-            self._row(area, row.hero, None, T["BAD"], text=app._percent(row.win))

@@ -16,7 +16,7 @@ from .suggestions import HeroSuggestions
 from .widgets import EntryBox, ScrollArea, Segmented, button
 
 #: Сколько ячеек показывать в списках, пока они не заполнены.
-_SLOTS = {"enemies": 5, "allies": 4}
+_SLOTS = {"enemies": 5, "allies": 5}
 
 
 class DraftTab:
@@ -166,6 +166,13 @@ class DraftTab:
             self._draft_retry.pack(side=tk.RIGHT)
         else:
             self._draft_retry.pack_forget()
+        self._view_switch(area, self._draft_view, self._set_draft_view)
+        if self._draft_view == "eval":
+            # Своя команда против противника; страниц хватает вражеских — пара видна
+            # с любой из двух сторон
+            self._render_evaluation(area, board.groups["allies"], board.enemies, board.reports,
+                                    (tr["eval_ours"], tr["eval_theirs"]), loading=board.loading)
+            return
 
         notes = []
         for hero in board.enemies:
@@ -266,6 +273,11 @@ class DraftTab:
         self._draft_group = group
         self._group_seg.set(group)
         self.draft_entry.focus_set()
+
+    def _set_draft_view(self, view):
+        self._draft_view = view
+        self._render_draft()
+        self._draft_results.to_top()
 
     def _set_draft_role(self, role):
         self._board.role = role

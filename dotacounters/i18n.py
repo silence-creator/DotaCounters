@@ -153,8 +153,6 @@ I18N = {
         "cm_pick_at":        "Your pick on move {n}",
         "cm_ban_why":        "strongest against your picks: {heroes}",
         "cm_pick_why":       "against their picks: {heroes}",
-        "cm_ban_empty":      "Appears after your first pick: bans are suggested against your heroes.",
-        "cm_pick_empty":     "Appears after their first pick.",
         "cm_failed":         "Not loaded: {heroes}",
         "cm_taken":          "{hero} is already banned or picked",
         "cm_undone":         "Undone: {hero}",
@@ -167,6 +165,33 @@ I18N = {
         "meta_pick":         "in {pick} of games",
         "meta_failed":       "Could not load the meta: {detail}",
         "ov_meta":           "meta · {rank}",
+        "meta_pick_why":     "the enemy has not picked yet — the strongest in the meta for your open "
+                             "positions, among heroes picked in {pick}%+ of games",
+        "ov_we":             "We",
+        "ov_first":          "First",
+
+        # ── Оценка драфта
+        "view_picks":        "Suggestions",
+        "view_eval":         "Draft evaluation",
+        "eval_empty":        "The evaluation appears once both teams have at least one hero.",
+        "eval_ours":         "Your team",
+        "eval_you":          "{side} (you)",
+        "eval_theirs":       "Enemy",
+        "eval_score":        "{team} is ahead on matchups: {value}",
+        "eval_score_why":    "sum of advantages over all {n} pairs divided by 5 — every hero faces five. "
+                             "This is the matchup edge, not a win probability.",
+        "eval_meta":         "Heroes' win rate in the meta ({rank}): {ours} vs {theirs}",
+        "eval_unknown":      "No matchup data yet: {heroes}",
+        "eval_best":         "Best pairs",
+        "eval_worst":        "Dangerous pairs",
+        "eval_no_pairs":     "none",
+        "eval_lanes":        "Lanes",
+        "eval_lane_vs":      "{ours} vs {theirs}",
+        "lane_safe":         "Your safe lane",
+        "lane_mid":          "Mid",
+        "lane_off":          "Your offlane",
+        "eval_footnote":     "A pair's value is from Dotabuff for the whole game, not just the laning stage. "
+                             "Lanes follow the positions the program assigns to each team.",
         "rank_all":          "All ranks",
         "rank_herald":       "Crusader and lower (under 2K)",
         "rank_archon":       "Archon (2–3K)",
@@ -268,7 +293,13 @@ I18N = {
         "upd_restart":       "Restarting…",
         "upd_error":         "Update failed: {detail}",
         "upd_title":         "Updates",
-        "upd_text":          "v2.2\n"
+        "upd_text":          "v2.3\n"
+                             "Draft evaluation — in the Draft and Captains Mode tabs, next to the suggestions: which team is ahead on matchups and by how much, a table of every hero against every enemy, the best and the most dangerous pairs, the lanes by positions and the heroes' win rate in the meta. After the last Captains Mode move it opens by itself.\n"
+                             "Captains Mode: before the enemy picks anyone, picks are suggested from the meta too — the strongest heroes for your open positions.\n"
+                             "Overlay in Captains Mode: shows both who to ban and who to pick, and lets you choose your side and who moves first. The overlay is taller.\n"
+                             "Your team in All Pick holds five heroes — yours included, for the evaluation.\n"
+                             "\n"
+                             "v2.2\n"
                              "Captains Mode: bans of the first phase, before anyone has picked. They come from the meta — the strongest heroes by win rate among those picked in at least 5% of games; the rank is chosen next to the list and remembered.\n"
                              "Captains Mode: after the first picks, ban suggestions are for the positions the enemy still lacks — no point banning a carry when they already have one. «show all» turns it off.\n"
                              "\n"
@@ -492,8 +523,6 @@ I18N = {
         "cm_pick_at":        "Ваш пик на ходу {n}",
         "cm_ban_why":        "сильнее всех против ваших пиков: {heroes}",
         "cm_pick_why":       "против их пиков: {heroes}",
-        "cm_ban_empty":      "Появится после вашего первого пика: баны подбираются против ваших героев.",
-        "cm_pick_empty":     "Появится после их первого пика.",
         "cm_failed":         "Не загрузились: {heroes}",
         "cm_taken":          "{hero} уже забанен или выбран",
         "cm_undone":         "Отменено: {hero}",
@@ -506,6 +535,33 @@ I18N = {
         "meta_pick":         "берут в {pick} игр",
         "meta_failed":       "Не удалось загрузить мету: {detail}",
         "ov_meta":           "мета · {rank}",
+        "meta_pick_why":     "противник ещё никого не взял — сильнейшие в мете под ваши свободные "
+                             "позиции, среди тех, кого берут от {pick}% игр",
+        "ov_we":             "Мы",
+        "ov_first":          "Первые",
+
+        # ── Оценка драфта
+        "view_picks":        "Подбор",
+        "view_eval":         "Оценка драфта",
+        "eval_empty":        "Оценка появится, когда у обеих команд будет хотя бы по герою.",
+        "eval_ours":         "Ваша команда",
+        "eval_you":          "{side} (вы)",
+        "eval_theirs":       "Противник",
+        "eval_score":        "{team} сильнее по матчапам: {value}",
+        "eval_score_why":    "сумма преимуществ по всем {n} парам, делённая на 5 — каждый герой играет "
+                             "против пятерых. Это перевес по матчапам, а не вероятность победы.",
+        "eval_meta":         "Винрейт героев в мете ({rank}): {ours} против {theirs}",
+        "eval_unknown":      "Пока нет данных о матчапах: {heroes}",
+        "eval_best":         "Выгодные пары",
+        "eval_worst":        "Опасные пары",
+        "eval_no_pairs":     "нет",
+        "eval_lanes":        "Линии",
+        "eval_lane_vs":      "{ours} против {theirs}",
+        "lane_safe":         "Ваша лёгкая линия",
+        "lane_mid":          "Мид",
+        "lane_off":          "Ваша сложная линия",
+        "eval_footnote":     "Значение пары — от Dotabuff за всю игру, а не только за стадию линий. Линии — "
+                             "по позициям, на которые программа расставила каждую команду.",
         "rank_all":          "Все ранги",
         "rank_herald":       "Crusader и ниже (до 2K)",
         "rank_archon":       "Archon (2–3K)",
@@ -607,7 +663,13 @@ I18N = {
         "upd_restart":       "Перезапуск…",
         "upd_error":         "Не удалось обновить: {detail}",
         "upd_title":         "Обновления",
-        "upd_text":          "v2.2\n"
+        "upd_text":          "v2.3\n"
+                             "Оценка драфта — во вкладках «Драфт» и «Captains Mode», рядом с подсказками: какая команда сильнее по матчапам и насколько, таблица «каждый против каждого», выгодные и опасные пары, линии по позициям и винрейт героев в мете. После последнего хода Captains Mode открывается сама.\n"
+                             "Captains Mode: пока противник никого не взял, пики тоже подсказываются по мете — сильнейшие герои под ваши свободные позиции.\n"
+                             "Оверлей в Captains Mode: показывает и кого банить, и кого брать, и позволяет выбрать сторону и первый ход. Оверлей стал выше.\n"
+                             "Своя команда в All Pick — пять героев, вместе с вашим: он нужен для оценки.\n"
+                             "\n"
+                             "v2.2\n"
                              "Captains Mode: баны первой фазы, до любых пиков. Они берутся из меты — сильнейшие по винрейту среди героев, которых берут хотя бы в 5% игр; ранг выбирается рядом со списком и запоминается.\n"
                              "Captains Mode: после первых пиков баны подсказываются под позиции, которых не хватает противнику — керри банить незачем, если он у них уже есть. «показать всех» выключает это.\n"
                              "\n"

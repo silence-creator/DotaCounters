@@ -12,6 +12,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotacounters.draft import FILTERS, GROUPS, SIDES  # noqa: E402
+from dotacounters.evaluate import LANES  # noqa: E402
 from dotacounters.i18n import I18N  # noqa: E402
 from dotacounters.meta import RANKS  # noqa: E402
 from dotacounters.ui.app import TABS  # noqa: E402
@@ -53,6 +54,7 @@ PREFIX_KEYS = {
     "cm_entry_": _KINDS,
     "draft_to_": GROUPS, "draft_row_": GROUPS, "draft_next_": ("enemies", "allies"),
     "ov_group_": GROUPS, "rank_": RANKS, "rank_short_": RANKS,
+    "lane_": tuple(lane for lane, _, _ in LANES),
 }
 _SOURCES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         "dotacounters")

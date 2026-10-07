@@ -19,8 +19,9 @@ from .roles import ROLE_LEVELS, ROLE_ORDER
 DEFAULT_PICKS = 5
 #: Больше пяти врагов в Dota не бывает.
 MAX_ENEMIES = 5
-#: Союзники — остальные четверо в команде того, кто выбирает.
-MAX_ALLIES = 4
+#: Своя команда — пятеро, вместе с тем, кто выбирает: для оценки драфта нужен
+#: и его герой. Подсказки пиков — пока мест меньше пяти.
+MAX_ALLIES = 5
 #: С запасом: в Captains Mode банов 14, в рейтинговом All Pick меньше.
 MAX_BANS = 16
 
@@ -450,21 +451,35 @@ class CaptainsDraft(_FillsPositions):
         """Своих пиков ещё нет — баны подбираются по мете, а не по контрпикам."""
         return not self.picks(self.ours)
 
-    def meta_bans(self, limit: int = DEFAULT_PICKS):
-        """Кого банить по мете выбранного ранга; None — меты ещё нет.
-
-        Взятые и забаненные не предлагаются, фильтр позиции или роли и
-        свободные позиции противника — как у остальных подсказок.
-        """
+    def _meta_list(self, need, limit):
+        """Сильнейшие в мете: не взятые, под фильтр и под позиции need (пусто — любые)."""
         if self.meta is None:
             return None
-        taken, need = self.taken(), set(self.ban_filter())
+        taken, need = self.taken(), set(need)
 
         def allowed(hero):
             return (hero.lower() not in taken
                     and (self.role is None or has_role(hero, self.role))
                     and (not need or need & set(positions_of(hero))))
         return strongest(self.meta, self.rank, allowed, limit)
+
+    def meta_bans(self, limit: int = DEFAULT_PICKS):
+        """Кого банить по мете выбранного ранга; None — меты ещё нет.
+
+        Взятые и забаненные не предлагаются, фильтр позиции или роли и
+        свободные позиции противника — как у остальных подсказок.
+        """
+        return self._meta_list(self.ban_filter(), limit)
+
+    @property
+    def picks_by_meta(self) -> bool:
+        """У противника ещё нет пиков — брать не против кого, пики тоже по мете."""
+        return not self.picks(self.theirs)
+
+    def meta_picks(self, limit: int = DEFAULT_PICKS):
+        """Кого брать, пока противник не выбрал никого: сильнейшие в мете под
+        свободные позиции своей команды (pick_filter). None — меты ещё нет."""
+        return self._meta_list(self.pick_filter(), limit)
 
     def pick_suggestions(self, limit: int = DEFAULT_PICKS):
         """Кого брать: сильнейшие против их пиков, под свободные позиции своей

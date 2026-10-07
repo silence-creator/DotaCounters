@@ -33,6 +33,7 @@ from ..themes import THEMES, theme_key
 from . import dpi
 from .cm_tab import CaptainsTab
 from .draft_tab import DraftTab
+from .evaluation_view import EvaluationView
 from .overlay import Overlay
 from .patch_notes import PatchNotesModal
 from .search_tab import SearchTab
@@ -51,7 +52,7 @@ MIN_WINDOW = (1040, 700)
 TABS = ("search", "draft", "cm", "settings")
 
 
-class DotaApp(SearchTab, DraftTab, CaptainsTab, SettingsTab, UpdatesTab):
+class DotaApp(SearchTab, DraftTab, CaptainsTab, EvaluationView, SettingsTab, UpdatesTab):
     """Главное окно. Состояние общее для вкладок; вкладки — примеси."""
 
     def __init__(self, root):
@@ -102,6 +103,8 @@ class DotaApp(SearchTab, DraftTab, CaptainsTab, SettingsTab, UpdatesTab):
         self._last_hero     = None
         self._search_token  = 0              # отбросить устаревший ответ поиска
         self._search_state  = ("welcome", None)
+        self._draft_view    = "picks"        # «Подбор» или «Оценка драфта» — в Драфте
+        self._cm_view       = "picks"        # и в Captains Mode
         updates.cleanup_old()                # хвост от прошлого обновления
 
         # Оверлей и его клавиша живут всё время работы программы, а не

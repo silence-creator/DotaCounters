@@ -4,7 +4,7 @@
 
 **Портативный десктопный инструмент для контрпиков и драфта в Dota 2.**
 
-![version](https://img.shields.io/badge/version-2.2-d6a652)
+![version](https://img.shields.io/badge/version-2.3-d6a652)
 [![tests](https://github.com/silence-creator/DotaCounters/actions/workflows/tests.yml/badge.svg)](https://github.com/silence-creator/DotaCounters/actions/workflows/tests.yml)
 ![python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![platform](https://img.shields.io/badge/platform-Windows-lightgrey)
@@ -34,6 +34,11 @@ Captains Mode: все 24 хода по порядку, как в игре. Пр�
 и подсказывает, кого банить против ваших пиков и кого брать против их пиков:
 
 ![Captains Mode](docs/screenshot-cm.png)
+
+Оценка драфта: какая команда сильнее по матчапам, каждый герой против каждого,
+выгодные и опасные пары, линии:
+
+![Оценка драфта](docs/screenshot-eval.png)
 
 Стартовый экран и встроенный список героев:
 
@@ -74,6 +79,10 @@ Captains Mode: все 24 хода по порядку, как в игре. Пр�
   по винрейту среди героев, которых берут хотя бы в 5% игр, для выбранного
   ранга (до 2K … Divine+). После пиков — против ваших героев и под позиции,
   которых не хватает противнику: керри банить незачем, если он у них уже есть.
+  Пока противник никого не взял, пики тоже подсказываются по мете.
+- **Оценка драфта** — рядом с подсказками в Драфте и Captains Mode: какая
+  команда сильнее по матчапам и насколько, таблица «каждый против каждого»,
+  выгодные и опасные пары, линии по позициям и винрейт героев в мете.
 - **Период** — данные за неделю, месяц или весь патч, переключатель в шапке.
   За патч матчей впятеро больше — цифры стабильнее; неделя показывает свежие
   правки баланса.
@@ -160,6 +169,7 @@ dotacounters/
     lanes.py            статистика линий Dotabuff (собирается скриптом)
     positions.py        позиции 1–5 из статистики линий
     meta.py             мета по рангам — баны первой фазы Captains Mode
+    evaluate.py         оценка драфта: команда против команды
     net.py              общий HTTP-клиент (curl_cffi)
     dotabuff.py         разбор таблиц контрпиков
     draft.py            подбор пика и бана, порядок Captains Mode
@@ -183,6 +193,7 @@ dotacounters/
         style.py        шрифты по ролям
         dpi.py          пиксели макета -> экранные при масштабе Windows
         role_menu.py    выбор позиции или роли
+        evaluation_view.py вывод оценки драфта
         hero_browser.py список героев
         suggestions.py  подсказки при вводе имени
         patch_notes.py  заметки к патчу
